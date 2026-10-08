@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """End-to-end smoke test of the Farmi MVP.
 
-Starts the Go backend on a scratch port and drives the full flow through the
-REST contract (docs/API.md): WhatsApp → OCR → validation → availability →
-cart → reservation → payment → fulfilment → notifications, for pickup,
-delivery and the expiry/renew/cancel paths. Exit code 1 if any check fails.
+Starts the Go backend on two scratch ports (customer surface + company
+surface) and drives the full flow through the REST contract (docs/API.md):
+WhatsApp → OCR → validation → availability → cart → reservation → payment on
+the customer side, fulfilment → notifications on the company side, for
+pickup, delivery and the expiry/renew/cancel paths. Exit code 1 if any check
+fails.
 """
 import json
 import os
@@ -19,7 +21,9 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PORT = int(os.environ.get("SMOKE_PORT", "18080"))
+COMPANY_PORT = int(os.environ.get("SMOKE_COMPANY_PORT", "18081"))
 BASE = f"http://localhost:{PORT}/api/v1"
+COMPANY = f"http://localhost:{COMPANY_PORT}/api/v1"
 WEB = "http://localhost:5173"
 A, B, C = "+593991111111", "+593992222222", "+593993333333"
 
@@ -31,9 +35,10 @@ def check(name, cond):
     print(("  ✓ " if cond else "  ✗ ") + name)
 
 
-def call(method, path, body=None):
+def call(method, path, body=None, base=BASE):
+    """Customer surface (WhatsApp, checkout, payments)."""
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(BASE + path, data=data, method=method, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(base + path, data=data, method=method, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             raw = r.read()
@@ -41,6 +46,11 @@ def call(method, path, body=None):
     except urllib.error.HTTPError as e:
         raw = e.read()
         return e.code, (json.loads(raw) if raw else None)
+
+
+def ops(method, path, body=None):
+    """Company surface (cashier / courier board, notifications)."""
+    return call(method, path, body, base=COMPANY)
 
 
 def chat(phone, text=None, media=None):
@@ -94,9 +104,7 @@ def pickup_flow():
     s, r, _ = chat(A, "2")
     check("zona centro offers the split option", s == "ASK_MODE" and "Económicas Demo Centro + Medicity Demo Centro" in r)
     s, r, _ = chat(A, "retiro")
-    check("pickup asks which option", s == "ASK_PICKUP_OPTION")
-    s, r, _ = chat(A, "1")
-    check("brand prompt for Paracetamol", s == "ASK_BRAND" and "Paracetamol" in r)
+    check("only one way to pick it up → straight to brands (Paracetamol)", s == "ASK_BRAND" and "Retiro en:" in r and "Paracetamol" in r)
     s, r, _ = chat(A, "1")
     check("brand prompt for Amoxicilina", s == "ASK_BRAND" and "Amoxicilina" in r)
     s, r, _ = chat(A, "1")
@@ -113,11 +121,17 @@ def pickup_flow():
     par = next(i for i in o["items"] if i["medicine"].startswith("Paracetamol"))
     amx = next(i for i in o["items"] if i["medicine"].startswith("Amoxicilina"))
     lor = next(i for i in o["items"] if i["medicine"].startswith("Loratadina"))
-    check("OTC can increase, Rx cannot", par["canIncrease"] and not amx["canIncrease"] and amx["canDecrease"])
+    check("OTC can increase, Rx at the prescribed quantity cannot", par["canIncrease"] and not amx["canIncrease"] and amx["canDecrease"])
     st, res = call("PATCH", f"/orders/{oid}/items/{par['id']}", {"quantity": par["quantity"] + 5})
     check("OTC +5 accepted and totals recalculated", st == 200 and res["order"]["subtotal"] > o["subtotal"])
     st, res = call("PATCH", f"/orders/{oid}/items/{amx['id']}", {"quantity": amx["quantity"] + 1})
-    check("Rx +1 rejected (RX_INCREASE_NOT_ALLOWED)", st == 409 and res["error"]["code"] == "RX_INCREASE_NOT_ALLOWED")
+    check("Rx above the prescription rejected (RX_INCREASE_NOT_ALLOWED)", st == 409 and res["error"]["code"] == "RX_INCREASE_NOT_ALLOWED")
+    st, res = call("PATCH", f"/orders/{oid}/items/{amx['id']}", {"quantity": amx["quantity"] - 2})
+    low = next(i for i in res["order"]["items"] if i["id"] == amx["id"]) if st == 200 else {}
+    check("Rx −2 accepted and can grow back", st == 200 and low.get("quantity") == amx["quantity"] - 2 and low.get("canIncrease"))
+    st, res = call("PATCH", f"/orders/{oid}/items/{amx['id']}", {"quantity": amx["quantity"]})
+    back = next(i for i in res["order"]["items"] if i["id"] == amx["id"]) if st == 200 else {}
+    check("Rx back up to the prescribed quantity, then capped", st == 200 and back.get("quantity") == amx["quantity"] and not back.get("canIncrease"))
     st, res = call("PATCH", f"/orders/{oid}/items/{par['id']}", {"quantity": 10000})
     check("increase beyond stock rejected (INSUFFICIENT_STOCK)", st == 409 and res["error"]["code"] == "INSUFFICIENT_STOCK")
     st, res = call("PATCH", f"/orders/{oid}/items/{lor['id']}", {"quantity": 0})
@@ -138,17 +152,17 @@ def pickup_flow():
     check("card approval → order PAID with 2 pharmacy fulfilments (ETA 20 min)", paid["status"] == "PAID" and len(paid["fulfillments"]) == 2 and all(f["etaMinutes"] == 20 for f in paid["fulfillments"]))
     st, again = call("POST", f"/payments/{res['payment']['id']}/confirm", {"outcome": "approved"})
     check("repeated confirmation is idempotent", st == 200 and again["order"]["paidAt"] == paid["paidAt"])
-    st, res = call("GET", f"/notifications?orderId={oid}&channel=pharmacy")
+    st, res = ops("GET", f"/notifications?orderId={oid}&channel=pharmacy")
     check("both pharmacies notified", st == 200 and len(res["notifications"]) == 2)
     check("client got the confirmation with ETA", said(A, "Pago aprobado") and said(A, "20 minutos"))
 
-    st, res = call("GET", "/fulfillment/orders?pharmacyId=eco-centro")
+    st, res = ops("GET", "/fulfillment/orders?pharmacyId=eco-centro")
     check("cashier board lists the order", st == 200 and any(x["id"] == oid for x in res["orders"]))
-    st, res = call("POST", f"/fulfillment/orders/{oid}/pharmacies/eco-centro/status", {"status": "PREPARING"})
+    st, res = ops("POST", f"/fulfillment/orders/{oid}/pharmacies/eco-centro/status", {"status": "PREPARING"})
     check("eco-centro preparing → order PREPARING", st == 200 and res["order"]["status"] == "PREPARING")
-    st, res = call("POST", f"/fulfillment/orders/{oid}/pharmacies/eco-centro/status", {"status": "READY"})
+    st, res = ops("POST", f"/fulfillment/orders/{oid}/pharmacies/eco-centro/status", {"status": "READY"})
     check("one pharmacy ready → order still PREPARING", st == 200 and res["order"]["status"] == "PREPARING")
-    st, res = call("POST", f"/fulfillment/orders/{oid}/pharmacies/med-centro/status", {"status": "READY"})
+    st, res = ops("POST", f"/fulfillment/orders/{oid}/pharmacies/med-centro/status", {"status": "READY"})
     check("both ready → order READY", st == 200 and res["order"]["status"] == "READY")
     check("client told per pharmacy it is ready", said(A, "listo para recoger"))
     s, r, _ = chat(A, "estado")
@@ -184,14 +198,14 @@ def delivery_flow():
     res = pay_card(oid)
     check("paid delivery → CONSOLIDATING with 45 min ETA", res["order"]["delivery"]["status"] == "CONSOLIDATING" and res["order"]["delivery"]["etaMinutes"] == 45)
     check("client told the arrival ETA", said(B, "45 minutos"))
-    st, res = call("GET", "/fulfillment/orders?role=courier")
+    st, res = ops("GET", "/fulfillment/orders?role=courier")
     check("courier board lists the delivery", st == 200 and any(x["id"] == oid for x in res["orders"]))
-    st, res = call("POST", f"/fulfillment/orders/{oid}/delivery/status", {"status": "DISPATCHED"})
+    st, res = ops("POST", f"/fulfillment/orders/{oid}/delivery/status", {"status": "DISPATCHED"})
     check("dispatched → order DISPATCHED, 15 min ETA", st == 200 and res["order"]["status"] == "DISPATCHED" and res["order"]["delivery"]["etaMinutes"] == 15)
-    st, res = call("POST", f"/fulfillment/orders/{oid}/delivery/status", {"status": "DELIVERED"})
+    st, res = ops("POST", f"/fulfillment/orders/{oid}/delivery/status", {"status": "DELIVERED"})
     check("delivered → order DELIVERED", st == 200 and res["order"]["status"] == "DELIVERED")
     check("client told 'en reparto' and 'entregado'", said(B, "en reparto") and said(B, "fue entregado"))
-    st, res = call("GET", f"/notifications?orderId={oid}&channel=courier")
+    st, res = ops("GET", f"/notifications?orderId={oid}&channel=courier")
     check("courier notified", st == 200 and len(res["notifications"]) >= 2)
 
 
@@ -205,8 +219,9 @@ def expiry_flow():
     chat(C, media="receta-001")
     s, r, _ = chat(C, "quito norte")
     check("zona norte: single store covers everything", s == "ASK_MODE" and "toda la receta" in r)
-    chat(C, "retiro")
-    chat(C, "1")
+    check("…and Farmi suggests just that one", "te sugiero esta farmacia" in r and "Económicas Demo Norte +" not in r)
+    s, r, _ = chat(C, "retiro")
+    check("single suggestion → no option question", s == "ASK_BRAND" and "Medicity Demo Norte" in r)
     chat(C, "2")
     chat(C, "1")
     chat(C, "1")
@@ -227,8 +242,21 @@ def expiry_flow():
     check("'cancelar' cancels and releases", s == "COMPLETED" and res["order"]["status"] == "CANCELLED" and said(C, "cancelado"))
 
 
+def surfaces():
+    print("\n[0] Customer and company surfaces are separate")
+    st, res = call("GET", "/health")
+    check("customer port reports surface=customer", st == 200 and res["surface"] == "customer")
+    st, res = ops("GET", "/health")
+    check("company port reports surface=company", st == 200 and res["surface"] == "company")
+    st, _ = call("GET", "/fulfillment/orders?role=courier")
+    check("cashier board is not reachable from the customer port", st == 404)
+    st, _ = ops("GET", "/whatsapp/media")
+    check("WhatsApp channel is not reachable from the company port", st == 404)
+
+
 def main():
-    env = dict(os.environ, PORT=str(PORT), WEB_BASE_URL=WEB, STATIC_DIR="none", RESERVATION_TTL="4s", EXPIRY_TICK="500ms")
+    env = dict(os.environ, PORT=str(PORT), COMPANY_PORT=str(COMPANY_PORT), WEB_BASE_URL=WEB, STATIC_DIR="none",
+               COMPANY_STATIC_DIR="none", RESERVATION_TTL="4s", EXPIRY_TICK="500ms")
     env["PATH"] = os.path.expanduser("~/bin") + ":" + env.get("PATH", "")
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="farmi-smoke-"))
     binary = tmp / "farmi"
@@ -239,7 +267,7 @@ def main():
         for _ in range(60):
             try:
                 st, res = call("GET", "/health")
-                if st == 200:
+                if st == 200 and ops("GET", "/health")[0] == 200:
                     break
             except Exception:
                 pass
@@ -247,7 +275,8 @@ def main():
         else:
             print("backend did not start; see", tmp / "server.log")
             sys.exit(2)
-        print("[0] Health:", res)
+        print("Health:", res)
+        surfaces()
         pickup_flow()
         delivery_flow()
         expiry_flow()

@@ -31,11 +31,11 @@ func (h *handlers) getClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "modules": h.cfg.Modules})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "surface": h.cfg.Surface, "modules": h.cfg.Modules})
 }
 
 func (h *handlers) apiRoot(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"service": "farmi-backend", "api": "/api/v1", "docs": "docs/API.md"})
+	writeJSON(w, http.StatusOK, map[string]any{"service": "farmi-backend", "surface": h.cfg.Surface, "api": "/api/v1", "docs": "docs/API.md"})
 }
 
 func (h *handlers) apiNotFound(w http.ResponseWriter, _ *http.Request) {

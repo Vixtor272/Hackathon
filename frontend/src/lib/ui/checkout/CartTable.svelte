@@ -14,6 +14,14 @@
   let { order, editable, busy, onIncrease, onDecrease }: Props = $props();
 
   const multiPharmacy = $derived(new Set(order.items.map((item) => item.pharmacyId)).size > 1);
+
+  function increaseHint(item: OrderItem): string {
+    if (item.requiresPrescription && item.quantity >= item.prescribedQuantity) {
+      return `Bajo receta: máximo ${item.prescribedQuantity} ${item.unitLabel} (lo prescrito)`;
+    }
+    if (!item.canIncrease) return 'Sin stock adicional';
+    return item.requiresPrescription ? `Aumentar (hasta ${item.prescribedQuantity} ${item.unitLabel})` : 'Aumentar';
+  }
 </script>
 
 {#if order.items.length === 0}
@@ -50,8 +58,8 @@
                 <StatusPill label="Venta libre" tone="success" />
               {/if}
             </td>
-            {#if multiPharmacy}<td class="small">{item.pharmacyName}</td>{/if}
-            <td class="num">
+            {#if multiPharmacy}<td class="small" data-label="Local">{item.pharmacyName}</td>{/if}
+            <td class="num qty-cell" data-label="Cantidad">
               <div class="qty">
                 <button
                   type="button"
@@ -60,19 +68,22 @@
                   disabled={!editable || busy || !item.canDecrease}
                   onclick={() => onDecrease(item)}
                 >−</button>
-                <span class="value">{item.quantity} <span class="muted small">{item.unitLabel}</span></span>
+                <span class="value">
+                  {item.quantity}
+                  <span class="muted small">{item.requiresPrescription ? `/ ${item.prescribedQuantity} ` : ''}{item.unitLabel}</span>
+                </span>
                 <button
                   type="button"
                   class="btn btn-icon"
                   aria-label={`Aumentar ${item.medicine}`}
-                  title={item.requiresPrescription ? 'Bajo receta: no se puede aumentar desde esta página' : !item.canIncrease ? 'Sin stock adicional' : 'Aumentar'}
+                  title={increaseHint(item)}
                   disabled={!editable || busy || !item.canIncrease}
                   onclick={() => onIncrease(item)}
                 >+</button>
               </div>
             </td>
-            <td class="num">{formatMoney(item.unitPrice)}</td>
-            <td class="num"><strong>{formatMoney(item.subtotal)}</strong></td>
+            <td class="num" data-label="Precio unitario">{formatMoney(item.unitPrice)}</td>
+            <td class="num" data-label="Subtotal"><strong>{formatMoney(item.subtotal)}</strong></td>
           </tr>
         {/each}
       </tbody>
@@ -104,6 +115,42 @@
   }
   .diff {
     color: var(--warning);
+  }
+  /* Phones: each product becomes a card so the − / + buttons stay on screen. */
+  @media (max-width: 720px) {
+    .table thead {
+      display: none;
+    }
+    .table,
+    .table tbody,
+    .table tr,
+    .table td {
+      display: block;
+      width: 100%;
+    }
+    .table tr {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+    }
+    .table td {
+      border: 0;
+      padding: 4px 0;
+      text-align: left;
+    }
+    .table td[data-label] {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .table td[data-label]::before {
+      content: attr(data-label);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 400;
+    }
   }
   .totals {
     margin-top: 14px;

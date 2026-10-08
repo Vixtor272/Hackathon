@@ -1,10 +1,13 @@
 import { writable, type Readable } from 'svelte/store';
 
+/**
+ * Routes of the customer app. The company back office (cashier / courier
+ * board) is a separate app on its own port, see empresa/ and EmpresaApp.svelte.
+ */
 export type Route =
   | { name: 'whatsapp' }
   | { name: 'checkout'; orderId: string }
   | { name: 'deuna'; paymentId: string }
-  | { name: 'operations' }
   | { name: 'notFound'; path: string };
 
 /** Pure path → route mapping (tested in isolation). */
@@ -15,7 +18,6 @@ export function matchRoute(pathname: string): Route {
   if (segments.length === 0) return { name: 'whatsapp' };
   if (head === 'checkout' && tail && rest.length === 0) return { name: 'checkout', orderId: decodeURIComponent(tail) };
   if (head === 'deuna' && tail && rest.length === 0) return { name: 'deuna', paymentId: decodeURIComponent(tail) };
-  if (head === 'operaciones' && segments.length === 1) return { name: 'operations' };
   return { name: 'notFound', path: pathname };
 }
 
@@ -23,7 +25,6 @@ export const ROUTES = {
   whatsapp: '/',
   checkout: (orderId: string) => `/checkout/${encodeURIComponent(orderId)}`,
   deuna: (paymentId: string) => `/deuna/${encodeURIComponent(paymentId)}`,
-  operations: '/operaciones',
 } as const;
 
 const current = writable<Route>({ name: 'whatsapp' });

@@ -76,8 +76,12 @@ type OrderItem struct {
 // Subtotal is price × quantity.
 func (i OrderItem) Subtotal() Money { return i.UnitPrice.Times(i.Quantity) }
 
-// CanIncrease: only over-the-counter products may grow from the web page.
-func (i OrderItem) CanIncrease() bool { return !i.RequiresPrescription }
+// CanIncrease: over-the-counter products may grow from the web page (subject
+// to stock); prescription products only back up to the prescribed quantity
+// after the client reduced them.
+func (i OrderItem) CanIncrease() bool {
+	return !i.RequiresPrescription || i.Quantity < i.PrescribedQuantity
+}
 
 // CanDecrease: any product can be reduced (to zero removes it).
 func (i OrderItem) CanDecrease() bool { return i.Quantity > 0 }
@@ -251,9 +255,9 @@ func (o *Order) QuantityChange(itemID string, qty int) (OrderItem, int, error) {
 		return item, 0, NewError(CodeValidation, "La cantidad no puede ser negativa")
 	}
 	delta := qty - item.Quantity
-	if delta > 0 && !item.CanIncrease() {
+	if delta > 0 && item.RequiresPrescription && qty > item.PrescribedQuantity {
 		return item, 0, NewError(CodeRxIncreaseNotAllowed,
-			"%s es un producto bajo receta: solo puedes reducir la cantidad", item.Brand)
+			"%s es un producto bajo receta: la cantidad máxima es la prescrita (%d %s)", item.Brand, item.PrescribedQuantity, item.UnitLabel)
 	}
 	return item, delta, nil
 }

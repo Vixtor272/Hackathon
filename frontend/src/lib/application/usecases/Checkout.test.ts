@@ -9,7 +9,7 @@ function setup() {
 }
 
 describe('Checkout quantity rules', () => {
-  it('refuses to increase a prescription item without calling the backend', async () => {
+  it('refuses to raise a prescription item above the prescribed quantity without calling the backend', async () => {
     const { orders, checkout } = setup();
     const order = await checkout.load('ord_1');
     const rx = order.items.find((item) => item.requiresPrescription);
@@ -20,6 +20,28 @@ describe('Checkout quantity rules', () => {
     );
     const unchanged = await orders.getOrder('ord_1');
     expect(unchanged.items.find((item) => item.id === rx.id)?.quantity).toBe(rx.quantity);
+  });
+
+  it('lets a prescription item go down and back up to the prescribed quantity', async () => {
+    const { checkout } = setup();
+    let order = await checkout.load('ord_1');
+    const rx = order.items.find((item) => item.requiresPrescription);
+    if (!rx) throw new Error('fixture needs a prescription item');
+
+    order = await checkout.decrease(order, rx);
+    order = await checkout.decrease(order, order.items.find((item) => item.id === rx.id)!);
+    let line = order.items.find((item) => item.id === rx.id)!;
+    expect(line.quantity).toBe(rx.prescribedQuantity - 2);
+    expect(line.canIncrease).toBe(true);
+
+    order = await checkout.increase(order, line);
+    order = await checkout.increase(order, order.items.find((item) => item.id === rx.id)!);
+    line = order.items.find((item) => item.id === rx.id)!;
+    expect(line.quantity).toBe(rx.prescribedQuantity);
+    expect(line.canIncrease).toBe(false);
+    await expect(checkout.increase(order, line)).rejects.toSatisfy(
+      (error: unknown) => isApiError(error) && error.code === 'RX_INCREASE_NOT_ALLOWED',
+    );
   });
 
   it('increases an over-the-counter item and recalculates totals', async () => {

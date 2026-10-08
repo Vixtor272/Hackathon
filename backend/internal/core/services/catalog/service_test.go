@@ -9,20 +9,18 @@ import (
 	"github.com/farmaenlace/farmi/internal/testkit"
 )
 
-func TestZonaNorteSingleStoreFirstThenSplit(t *testing.T) {
+func TestZonaNorteSuggestsOnlyTheStoreWithEverything(t *testing.T) {
 	app := testkit.New(10 * time.Minute)
 	av, err := app.Availability.FindOptions(context.Background(), "uio-norte", app.Receta(t, "receta-001"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(av.Options) != 2 {
-		t.Fatalf("want 2 options, got %d", len(av.Options))
+	// eco-norte + med-norte would also work, but a single pickup wins.
+	if len(av.Options) != 1 {
+		t.Fatalf("want 1 option, got %d: %+v", len(av.Options), av.Options)
 	}
 	if av.Options[0].Kind != domain.OptionSingle || av.Options[0].Pharmacies[0].ID != "med-norte" {
-		t.Fatalf("first option %+v", av.Options[0])
-	}
-	if av.Options[1].Kind != domain.OptionSplit || av.Options[1].Pharmacies[0].ID != "eco-norte" || av.Options[1].Pharmacies[1].ID != "med-norte" {
-		t.Fatalf("second option %+v", av.Options[1])
+		t.Fatalf("option %+v", av.Options[0])
 	}
 	if len(av.Missing) != 0 || !av.DeliveryAvailable {
 		t.Fatalf("missing %+v delivery %v", av.Missing, av.DeliveryAvailable)

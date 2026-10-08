@@ -33,6 +33,8 @@
   let loading = $state(true);
   let busy = $state(false);
 
+  // Present when the request was opened by scanning the checkout's QR.
+  const reference = new URLSearchParams(location.search).get('ref');
   const checkoutHref = $derived(data ? ROUTES.checkout(data.order.id) : ROUTES.whatsapp);
   const pending = $derived(data?.payment.status === 'PENDING' && !result);
 
@@ -86,7 +88,7 @@
       <a class="btn" href={ROUTES.whatsapp}>Volver al chat</a>
     {:else}
       <div class="amount">
-        <span class="muted">Pedido {data.order.code}</span>
+        <span class="muted">Pedido {data.order.code}{#if reference} · Ref. {reference}{/if}</span>
         <strong>{formatMoney(data.payment.amount)}</strong>
         <StatusPill label={PAYMENT_STATUS_LABELS[result?.payment.status ?? data.payment.status]} tone={paymentTone(result?.payment.status ?? data.payment.status)} />
       </div>

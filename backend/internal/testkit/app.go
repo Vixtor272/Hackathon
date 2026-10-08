@@ -68,6 +68,7 @@ type App struct {
 	OrderSvc      *order.Service
 	PaymentSvc    *payment.Service
 	Fulfillment   *fulfillment.Service
+	Notifier      *notify.Notifier
 	Assistant     *farmi.Assistant
 }
 
@@ -99,7 +100,7 @@ func New(ttl time.Duration) *App {
 		Availability: availability, Orders: orderSvc, AI: ai, Clock: clk, IDs: ids, Courier: demo.Courier(),
 	})
 	return &App{Clock: clk, Inventory: inventory, Orders: orders, Payments: payments, Messages: messages, Notifications: notifications,
-		OCR: ocrSvc, Availability: availability, OrderSvc: orderSvc, PaymentSvc: paymentSvc, Fulfillment: fulfillmentSvc, Assistant: assistant}
+		OCR: ocrSvc, Availability: availability, OrderSvc: orderSvc, PaymentSvc: paymentSvc, Fulfillment: fulfillmentSvc, Notifier: notifier, Assistant: assistant}
 }
 
 // Receta runs the OCR on a sample image.

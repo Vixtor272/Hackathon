@@ -57,9 +57,11 @@ func (s *Service) Pharmacies(ctx context.Context, zoneID string) ([]domain.Pharm
 	return s.api.ListPharmacies(ctx, zoneID)
 }
 
-// FindOptions builds the purchase options of a zone: first the stores that
-// cover the whole prescription, then pairs (a main store plus the nearest one
-// that has what it lacks), and finally what nobody in the zone can supply.
+// FindOptions builds the purchase options of a zone. When at least one store
+// covers the whole prescription only those stores are suggested (a single
+// pickup beats coordinating two); otherwise it proposes pairs (a main store
+// plus the nearest one that has what it lacks). Finally it lists what nobody
+// in the zone can supply.
 func (s *Service) FindOptions(ctx context.Context, zoneID string, p domain.Prescription) (domain.Availability, error) {
 	zone, err := s.api.FindZone(ctx, zoneID)
 	if err != nil {
@@ -78,8 +80,10 @@ func (s *Service) FindOptions(ctx context.Context, zoneID string, p domain.Presc
 		return domain.Availability{}, err
 	}
 	av := domain.Availability{Zone: zone}
-	av.Options = append(av.Options, singleStoreOptions(pharmacies, reqs, units)...)
-	av.Options = append(av.Options, splitStoreOptions(pharmacies, reqs, units)...)
+	av.Options = singleStoreOptions(pharmacies, reqs, units)
+	if len(av.Options) == 0 {
+		av.Options = splitStoreOptions(pharmacies, reqs, units)
+	}
 	for i := range av.Options {
 		av.Options[i].ID = fmt.Sprintf("opt_%d", i+1)
 	}

@@ -78,21 +78,32 @@ func msgNoAvailability(zone domain.Zone, missing []domain.MissingItem) string {
 
 func msgOptions(av domain.Availability) string {
 	var b strings.Builder
-	if len(av.Options) == 0 {
+	switch {
+	case len(av.Options) == 0:
 		fmt.Fprintf(&b, "No hay farmacias en %s que cubran tu receta para retiro.\n", av.Zone.Label)
-	} else {
-		fmt.Fprintf(&b, "Estas son las opciones en %s:\n\n", av.Zone.Label)
-		for i, opt := range av.Options {
+	case len(av.Options) == 1 && av.Options[0].Kind == domain.OptionSingle:
+		fmt.Fprintf(&b, "✅ En %s te sugiero esta farmacia, que tiene toda tu receta:\n\n", av.Zone.Label)
+	case len(av.Options) == 1:
+		fmt.Fprintf(&b, "En %s ninguna farmacia tiene toda tu receta, pero puedes completarla entre dos locales cercanos:\n\n", av.Zone.Label)
+	case av.Options[0].Kind == domain.OptionSingle:
+		fmt.Fprintf(&b, "✅ Estas farmacias de %s tienen toda tu receta:\n\n", av.Zone.Label)
+	default:
+		fmt.Fprintf(&b, "En %s ninguna farmacia tiene toda tu receta. Puedes completarla entre dos locales cercanos:\n\n", av.Zone.Label)
+	}
+	for i, opt := range av.Options {
+		if len(av.Options) == 1 {
+			fmt.Fprintf(&b, "🏪 %s\n", opt.Label)
+		} else {
 			fmt.Fprintf(&b, "%d. 🏪 %s\n", i+1, opt.Label)
-			if opt.Kind == domain.OptionSingle {
-				fmt.Fprintf(&b, "   📍 %s\n", opt.Pharmacies[0].Address)
-			} else {
-				for _, ph := range opt.Pharmacies {
-					fmt.Fprintf(&b, "   📍 %s (%s): %s\n", ph.Name, ph.Address, strings.Join(medicinesAt(opt, ph.ID), ", "))
-				}
-			}
-			b.WriteString("\n")
 		}
+		if opt.Kind == domain.OptionSingle {
+			fmt.Fprintf(&b, "   📍 %s\n", opt.Pharmacies[0].Address)
+		} else {
+			for _, ph := range opt.Pharmacies {
+				fmt.Fprintf(&b, "   📍 %s (%s): %s\n", ph.Name, ph.Address, strings.Join(medicinesAt(opt, ph.ID), ", "))
+			}
+		}
+		b.WriteString("\n")
 	}
 	if len(av.Missing) > 0 {
 		fmt.Fprintf(&b, "⚠️ Para retiro en esta zona no hay disponibilidad de:\n%s\n", bulletMissing(av.Missing))
@@ -116,15 +127,12 @@ func medicinesAt(opt domain.PharmacyOption, pharmacyID string) []string {
 }
 
 func msgAskPickupOption(n int) string {
-	if n == 1 {
-		return "¿Confirmas que retirarás en la opción 1? Responde con el número 1."
-	}
 	return fmt.Sprintf("¿En cuál opción deseas retirar? Responde con el número (1 a %d).", n)
 }
 
 func msgOptionChosen(opt domain.PharmacyOption) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "👍 Elegiste: %s.", opt.Label)
+	fmt.Fprintf(&b, "👍 Retiro en: %s.", opt.Label)
 	if opt.Kind == domain.OptionSplit {
 		b.WriteString("\nRecogerás en cada local lo siguiente:")
 		for _, ph := range opt.Pharmacies {

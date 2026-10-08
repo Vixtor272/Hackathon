@@ -6,3 +6,4 @@ export * from './fulfillment';
 export * from './order';
 export * from './payment';
 export * from './notification';
+export * from './card';

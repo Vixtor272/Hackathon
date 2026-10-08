@@ -25,7 +25,9 @@ export class InMemoryOrderGateway implements OrderGateway {
     if (!item) throw new ApiError('NOT_FOUND', 'Producto no encontrado', 404);
 
     if (quantity > item.quantity) {
-      if (item.requiresPrescription) throw new ApiError('RX_INCREASE_NOT_ALLOWED', 'No se puede aumentar un medicamento bajo receta', 409);
+      if (item.requiresPrescription && quantity > item.prescribedQuantity) {
+        throw new ApiError('RX_INCREASE_NOT_ALLOWED', 'No se puede superar la cantidad prescrita', 409);
+      }
       const extra = this.extraStock.get(item.sku) ?? Number.POSITIVE_INFINITY;
       if (quantity - item.quantity > extra) throw new ApiError('INSUFFICIENT_STOCK', 'No hay stock adicional', 409);
       if (Number.isFinite(extra)) this.extraStock.set(item.sku, extra - (quantity - item.quantity));
@@ -36,7 +38,8 @@ export class InMemoryOrderGateway implements OrderGateway {
     } else {
       item.quantity = quantity;
       item.subtotal = round2(quantity * item.unitPrice);
-      item.canIncrease = !item.requiresPrescription && (this.extraStock.get(item.sku) ?? 1) > 0;
+      const hasStock = (this.extraStock.get(item.sku) ?? 1) > 0;
+      item.canIncrease = hasStock && (!item.requiresPrescription || quantity < item.prescribedQuantity);
     }
     this.recalculate(order);
     if (order.payment && order.payment.status === 'PENDING') order.payment = { ...order.payment, status: 'INVALIDATED' };

@@ -1,9 +1,13 @@
 <script lang="ts">
+  import type { DeUnaQr } from '../../application/usecases';
   import { app } from '../../container';
+  import { detectDevice, type DeviceKind } from '../../device';
   import {
     errorMessage,
     isApiError,
     isPaid,
+    maskedNumber,
+    type CardForm,
     type Order,
     type OrderItem,
     type PaymentOptions,
@@ -32,12 +36,19 @@
   let options = $state<PaymentOptions | null>(null);
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
-  let notice = $state<string | null>(null);
+  let notice = $state<{ text: string; tone: 'info' | 'warning' } | null>(null);
   let busy = $state(false);
+  let device = $state<DeviceKind>(detectDevice());
+  let deunaQr = $state<DeUnaQr | null>(null);
 
   const paid = $derived(order ? isPaid(order) : false);
   const editable = $derived(order ? checkout.canPay(order) || (order.status === 'PENDING' && order.items.length === 0) : false);
-  const paymentRejected = $derived(order?.payment?.status === 'REJECTED');
+
+  // A QR is only shown while its payment is the order's pending one: a cart
+  // change, a rejection or an expiry voids it.
+  const activeQr = $derived(
+    deunaQr && order?.payment?.id === deunaQr.payment.id && order.payment.status === 'PENDING' ? deunaQr : null,
+  );
 
   $effect(() => {
     lastOrderId.set(orderId);
@@ -80,6 +91,7 @@
 
   function decrease(item: OrderItem): void {
     if (!order) return;
+    if (item.quantity === 1 && !window.confirm(`¿Quitar ${item.medicine} del carrito? No podrás volver a agregarlo desde esta página.`)) return;
     const current = order;
     void run(() => checkout.decrease(current, item));
   }
@@ -88,7 +100,7 @@
     if (!window.confirm('¿Cancelar el pedido y liberar las unidades reservadas?')) return;
     void run(async () => {
       const result = await checkout.cancel(orderId);
-      notice = 'Pedido cancelado. Las unidades reservadas quedaron disponibles de nuevo.';
+      notice = { text: 'Pedido cancelado. Las unidades reservadas quedaron disponibles de nuevo.', tone: 'info' };
       return result;
     });
   }
@@ -96,18 +108,44 @@
   function renew(): void {
     void run(async () => {
       const result = await checkout.renew(orderId);
-      notice = 'Reserva renovada por 10 minutos.';
+      notice = { text: 'Reserva renovada por 10 minutos.', tone: 'info' };
       options = null;
       await refresh();
       return result;
     });
   }
 
-  function payWithCard(outcome: PaymentOutcome): void {
+  function payWithCard(card: CardForm): void {
     void run(async () => {
-      const result = await paymentFlow.payWithCard(orderId, outcome);
+      const result = await paymentFlow.payWithCardDetails(orderId, card);
       lastPaymentId.set(result.payment.id);
-      notice = outcome === 'approved' ? null : 'El pago fue rechazado por el simulador. Puedes reintentar mientras la reserva siga vigente.';
+      notice =
+        result.payment.status === 'APPROVED'
+          ? null
+          : {
+              text: `La tarjeta ${maskedNumber(card.number)} fue rechazada (fondos insuficientes). Prueba con otra tarjeta mientras la reserva siga vigente.`,
+              tone: 'warning',
+            };
+      return result.order;
+    });
+  }
+
+  function payWithDeUnaQr(): void {
+    void run(async () => {
+      const qr = await paymentFlow.startDeUnaQr(orderId);
+      lastPaymentId.set(qr.payment.id);
+      deunaQr = qr;
+      return checkout.load(orderId); // the order now points at the new pending payment
+    });
+  }
+
+  function confirmDeUnaQr(outcome: PaymentOutcome): void {
+    const qr = activeQr;
+    if (!qr) return;
+    void run(async () => {
+      const result = await paymentFlow.confirmDeUnaQr(qr.payment.id, outcome);
+      notice =
+        outcome === 'approved' ? null : { text: 'DeUna rechazó el pago. Genera un nuevo código QR o elige otro método.', tone: 'warning' };
       return result.order;
     });
   }
@@ -143,15 +181,15 @@
       <div class="banner banner-danger"><div>Este pedido fue cancelado. Vuelve al chat para iniciar una nueva compra.</div></div>
     {/if}
 
-    <ErrorBanner message={notice} tone={paymentRejected ? 'warning' : 'info'} onclose={() => (notice = null)} />
+    <ErrorBanner message={notice?.text ?? null} tone={notice?.tone ?? 'info'} onclose={() => (notice = null)} />
     <ErrorBanner message={actionError} onclose={() => (actionError = null)} />
 
     <section class="card">
       <h2>Carrito</h2>
       {#if !paid && order.status !== 'CANCELLED'}
         <p class="small muted">
-          Los productos de venta libre se pueden aumentar o reducir según stock. Los medicamentos bajo receta solo se pueden reducir.
-          Al llegar a cero, el producto sale del carrito.
+          Los productos de venta libre se pueden aumentar o reducir según stock. Los medicamentos bajo receta se pueden reducir y
+          volver a subir hasta la cantidad prescrita, nunca más. Al llegar a cero, el producto sale del carrito.
         </p>
       {/if}
       <CartTable {order} {editable} {busy} onIncrease={increase} onDecrease={decrease} />
@@ -163,7 +201,18 @@
       </section>
     {:else if checkout.canPay(order) && options}
       <section class="card">
-        <PaymentSection options={options.options} amount={order.total} {busy} onCard={payWithCard} onDeUna={payWithDeUna} />
+        <PaymentSection
+          options={options.options}
+          amount={order.total}
+          {busy}
+          {device}
+          deunaQr={activeQr}
+          onCard={payWithCard}
+          onDeUna={payWithDeUna}
+          onDeUnaQr={payWithDeUnaQr}
+          onDeUnaQrOutcome={confirmDeUnaQr}
+          onSwitchDevice={(next) => (device = next)}
+        />
       </section>
     {:else if order.status === 'PENDING' && order.items.length === 0}
       <div class="banner banner-warning"><div>El carrito está vacío: no se puede pagar.</div></div>

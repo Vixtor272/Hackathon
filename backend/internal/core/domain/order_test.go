@@ -35,10 +35,31 @@ func TestQuantityChangeRules(t *testing.T) {
 	if _, delta, err := o.QuantityChange("itm_2", 20); err != nil || delta != -1 {
 		t.Fatalf("Rx decrease: delta=%d err=%v", delta, err)
 	}
+	if o.Items[1].CanIncrease() {
+		t.Fatal("Rx item at the prescribed quantity must not increase")
+	}
 	_, _, err = o.QuantityChange("itm_1", -1)
 	wantCode(t, err, domain.CodeValidation)
 	_, _, err = o.QuantityChange("nope", 1)
 	wantCode(t, err, domain.CodeNotFound)
+}
+
+func TestRxCanGoBackUpToThePrescribedQuantity(t *testing.T) {
+	o := sampleOrder()
+	o.ApplyQuantity("itm_2", 15)
+	rx, _ := o.Item("itm_2")
+	if !rx.CanIncrease() {
+		t.Fatal("Rx item below the prescribed quantity must be able to increase")
+	}
+	if _, delta, err := o.QuantityChange("itm_2", 21); err != nil || delta != 6 {
+		t.Fatalf("Rx back to the prescribed quantity: delta=%d err=%v", delta, err)
+	}
+	_, _, err := o.QuantityChange("itm_2", 22)
+	wantCode(t, err, domain.CodeRxIncreaseNotAllowed)
+	o.ApplyQuantity("itm_2", 21)
+	if rx, _ := o.Item("itm_2"); rx.CanIncrease() {
+		t.Fatal("Rx item back at the prescribed quantity must stop increasing")
+	}
 }
 
 func TestApplyQuantityZeroRemovesLine(t *testing.T) {

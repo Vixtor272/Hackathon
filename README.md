@@ -1,20 +1,24 @@
 # Farmi — asistente de compras por WhatsApp (MVP, hackathon Farmaenlace)
 
 Farmi lets a client buy the medicines of a prescription from WhatsApp. This repository is a
-**functional MVP** of the flow described in `flujo_farmaenlace.md`:
+**functional MVP** of the flow described in `flujo_farmaenlace.md`. The customer experience and the company's
+back office are separate apps on separate ports (see [Two apps, two ports](#two-apps-two-ports)); diagrams of
+the architecture and the step-by-step flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 1. Farmi greets and **always asks for the client's cédula** before anything else.
 2. The client sends the prescription photo → **OCR** returns structured JSON → the prescription is
    **validated** (required fields + doctor registered, active and enabled to prescribe in Ecuador).
 3. The client picks a city/zone → the **AI module consults the company's product API** and returns
-   the options: one pharmacy with everything, a main pharmacy + the nearest one with the rest, or
-   what is missing.
+   the options: if one pharmacy has everything only that is suggested (no extra question); otherwise a
+   main pharmacy + the nearest one with the rest; and what is missing.
 4. Pickup (choose the pharmacy/combination) or home delivery (company-wide stock, courier assigned,
    shipping fee).
 5. Brand and price per medicine → cart with totals.
 6. Stock is re-checked and **reserved for 10 minutes**; Farmi sends the **payment link**.
-7. The web page shows the cart (OTC items can grow if there is stock, prescription items can only
-   shrink), the countdown and the **payment options**: card simulator or DeUna simulator.
+7. The web page shows the cart (OTC items can grow if there is stock; prescription items can shrink and
+   grow back up to the prescribed quantity, never above), the countdown and the **payment options**: a
+   standard card form (validated in the browser, sandbox numbers decide the result) or DeUna — a QR to scan
+   with the phone when the page is open on a computer, the DeUna page when it is open on a phone.
 8. On approval the payment is registered, the order becomes PAID, stock is deducted **once**
    (idempotent), pharmacies/courier are notified and the client receives the **ETA** by WhatsApp,
    for pickup and for delivery. Cashiers and couriers advance the order from an operations board
@@ -31,7 +35,7 @@ charged.
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Backend  | Go 1.27, standard library only, REST API (`docs/API.md`), hexagonal architecture                                                                                  |
 | Frontend | Svelte 5 + TypeScript + Vite, hexagonal architecture with ports/adapters/use cases, no UI framework                                                                 |
-| Tests    | `go test` (domain rules + use cases through the hexagon), vitest (use cases with in-memory gateways), `scripts/e2e_smoke.py` (59 checks against a live backend) |
+| Tests    | `go test` (domain rules + use cases through the hexagon), vitest (use cases with in-memory gateways), `scripts/e2e_smoke.py` (66 checks against a live backend, both surfaces) |
 
 ## Run it
 
@@ -40,47 +44,63 @@ and linked from `~/bin` (already on the PATH in `~/.zshrc`).
 
 ```bash
 make install   # npm install
-make run       # builds the Svelte app and serves app + API from Go on http://localhost:8080
+make run       # builds both apps; client app + API on http://localhost:8080, company portal + API on http://localhost:8081
 ```
 
 Development with hot reload (two terminals):
 
 ```bash
-make backend   # Go API on :8080, payment links point to :5173
-make frontend  # Vite on :5173, proxies /api → :8080
+make backend   # Go API: customer surface :8080, company surface :8081; payment links point to :5173
+make frontend  # both Vite servers: client app :5173 (→ :8080) and company portal :5174 (→ :8081)
+               # (make cliente / make empresa run just one)
 ```
+
+### Two apps, two ports
+
+| | Customer experience | Company back office |
+|---|---|---|
+| Who | the client | cashiers, couriers, operations |
+| App (dev) | `http://localhost:5173` — WhatsApp simulator `/`, checkout `/checkout/:id`, DeUna `/deuna/:id` | `http://localhost:5174` — cashier boards per pharmacy, courier board, notifications outbox |
+| API | `:8080` customer surface: WhatsApp webhook, OCR, catalog, cart, payments | `:8081` company surface: fulfillment, notifications, clients, read-only orders and pharmacies |
+| Code | `frontend/index.html`, `src/App.svelte` | `frontend/empresa/`, `src/EmpresaApp.svelte` |
+
+One Go process, one core and one in-memory dataset serve both, so a payment on one side shows up on the
+other immediately; but each port mounts only its own routes, so neither side can call the other's endpoints.
 
 Checks:
 
 ```bash
 make test      # go vet + go test, svelte-check, vitest
-make smoke     # starts a backend on :18080 and drives the whole flow through the REST contract
+make smoke     # starts a backend on :18080/:18081 and drives the whole flow through both surfaces
 ```
 
-Configuration (environment variables of the backend): `PORT` (8080), `WEB_BASE_URL` (base of the
+Configuration (environment variables of the backend): `PORT` (8080, customer surface), `COMPANY_PORT`
+(8081, company surface), `COMPANY_STATIC_DIR` (built portal, defaults to `../frontend/dist/empresa`), `WEB_BASE_URL` (base of the
 links sent by WhatsApp), `STATIC_DIR` (built frontend to serve, `none` for API only; defaults to
 `../frontend/dist` when it exists), `RESERVATION_TTL` (10m), `EXPIRY_TICK` (5s).
 
 ## Demo script (≈5 minutes)
 
 Pages: `/` WhatsApp simulator · `/checkout/:orderId` cart + payment · `/deuna/:paymentId` bank
-simulator · `/operaciones` cashier / courier board + notifications outbox.
+simulator. Company portal (`:5174` in dev, `:8081` built): cashier / courier board + notifications outbox.
 
 1. **Identity.** In `/` pick María (+593991111111), type `hola`. Farmi asks for the cédula → `1712345678`.
 2. **OCR + validation.** Attach `receta-004` (no signature/stamp) → rejected with the reasons.
    Attach `receta-003` (inactive doctor) → rejected. Attach `receta-001` → validated, medicines listed.
 3. **Availability.** Zone `2` (Quito — zona centro) → the only option is the split
-   "Económicas Demo Centro + Medicity Demo Centro" (zone `1` gives a single pharmacy, zone `3` has
+   "Económicas Demo Centro + Medicity Demo Centro" (zone `1` suggests only Medicity Demo Norte, zone `3` has
    nothing for pickup but delivery works). `retiro` → `1`.
 4. **Brands and cart.** Pick a brand per medicine (`1`, `1`, `1`), confirm with `sí` → order
    `DEMO-001`, 10-minute reservation, checkout link.
-5. **Checkout.** Open the link: `+`/`−` per item (prescription items only `−`), countdown,
-   DeUna (pick a bank, reject, then retry) or card ("Simular pago aprobado").
+5. **Checkout.** Open the link: `+`/`−` per item (lower Amoxicilina, then `+` brings it back up to the
+   prescribed 21 and stops), countdown. Card: fill the form or use a test card (`4000 0000 0000 0002` is declined,
+   `4242 4242 4242 4242` approved). DeUna on the laptop shows a QR with a random reference → "Simular escaneo y
+   pago aprobado"; on a phone (or "Estoy en el celular") it opens the DeUna page with the banks.
 6. **ETA + fulfilment.** The chat receives the confirmation with the ETA per pharmacy. In
-   `/operaciones` open each pharmacy tab → "En preparación" → "Listo para recoger": the client is
+   the company portal open each pharmacy tab → "En preparación" → "Listo para recoger": the client is
    notified at every step; `estado` in the chat shows the same.
 7. **Delivery.** Juan (+593992222222) → `0912345678` → `receta-002` → `guayaquil` → `domicilio` →
-   an address → courier + USD 2,50 → brands → `sí` → pay → `/operaciones` → Reparto → "En reparto"
+   an address → courier + USD 2,50 → brands → `sí` → pay → company portal → Reparto → "En reparto"
    → "Entregado".
 8. **Expiry.** Run the backend with `RESERVATION_TTL=1m` to see the reservation expire; `continuar`
    renews it, `cancelar` releases it.
@@ -114,19 +134,19 @@ real system means writing one adapter and changing one line in the composition r
 ### Backend (`backend/`)
 
 ```
-cmd/server/main.go                 composition root: builds adapters, injects them into services, starts HTTP
+cmd/server/main.go                 composition root: builds adapters, injects them into services, starts the two HTTP surfaces
 internal/core/domain/              entities and rules: Order (cart rules, totals, ETAs), Prescription, Payment, Conversation…
 internal/core/ports/               driving.go (what the app offers) · driven.go (what it needs)
 internal/core/services/
   farmi/        Farmi: conversation state machine (ASK_ID → … → AWAIT_PAYMENT) + Spanish replies
   ocr/          extraction use case (image → JSON)
   prescription/ validation (required fields + doctor registry)
-  catalog/      AI module: medicine matching, pharmacy options (single/split/missing), delivery plan, brands
+  catalog/      AI module: medicine matching, pharmacy options (single first, split only if no single), delivery plan, brands
   order/        cart, 10-minute reservation, web-page quantity rules, cancel, expiry, renew
   payment/      card/DeUna attempts, idempotent approval, stock deduction, notifications
   fulfillment/  cashier / courier steps, ETA messages
   notify/       fan-out to WhatsApp + outbox
-internal/adapters/in/rest/         handlers, DTOs (contract in docs/API.md), SPA static serving
+internal/adapters/in/rest/         customer + company routers, handlers, DTOs (contract in docs/API.md), SPA static serving
 internal/adapters/out/             one package per simulated system (see diagram)
 internal/demo/                     fictitious dataset
 internal/testkit/                  assembles the hexagon with in-memory adapters + fake clock for tests
@@ -135,14 +155,15 @@ internal/testkit/                  assembles the hexagon with in-memory adapters
 ### Frontend (`frontend/src/lib`)
 
 ```
-domain/          types (Order, Payment, Message…) and labels
+domain/          types (Order, Payment, Message…), labels, card form rules (card.ts: Luhn, brand, expiry, CVV)
+device.ts        computer vs phone detection (decides QR or DeUna page) · qr.ts QR matrix (qrcode-generator)
 application/
   ports/         ChatGateway, OrderGateway, PaymentGateway, FulfillmentGateway, CatalogGateway, NotificationGateway
   usecases/      ChatSession, Checkout, PaymentFlow, OperationsBoard (depend only on ports)
 adapters/http/   fetch implementations of the ports (base /api/v1, error envelope → ApiError)
 adapters/memory/ in-memory fakes used by vitest
 container.ts     composition root · router.ts tiny history router
-ui/              Svelte components per page: whatsapp/, checkout/, deuna/, operations/
+ui/              Svelte components per page: whatsapp/, checkout/, deuna/ (client app) · operations/ (company portal)
 ```
 
 ## Requested modules ↔ code

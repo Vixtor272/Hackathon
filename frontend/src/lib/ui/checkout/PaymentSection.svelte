@@ -1,17 +1,24 @@
 <script lang="ts">
-  import type { PaymentMethod, PaymentOption, PaymentOutcome } from '../../domain';
-  import { formatMoney } from '../../format';
-  import CardSimulator from './CardSimulator.svelte';
+  import type { DeUnaQr } from '../../application/usecases';
+  import type { CardForm as CardDetails, PaymentMethod, PaymentOption, PaymentOutcome } from '../../domain';
+  import type { DeviceKind } from '../../device';
+  import CardForm from './CardForm.svelte';
+  import DeUnaPanel from './DeUnaPanel.svelte';
 
   interface Props {
     options: PaymentOption[];
     amount: number;
     busy: boolean;
-    onCard: (outcome: PaymentOutcome) => void;
+    device: DeviceKind;
+    deunaQr: DeUnaQr | null;
+    onCard: (card: CardDetails) => void;
     onDeUna: () => void;
+    onDeUnaQr: () => void;
+    onDeUnaQrOutcome: (outcome: PaymentOutcome) => void;
+    onSwitchDevice: (device: DeviceKind) => void;
   }
 
-  let { options, amount, busy, onCard, onDeUna }: Props = $props();
+  let { options, amount, busy, device, deunaQr, onCard, onDeUna, onDeUnaQr, onDeUnaQrOutcome, onSwitchDevice }: Props = $props();
   let selected = $state<PaymentMethod | null>(null);
 </script>
 
@@ -35,15 +42,18 @@
   </div>
 
   {#if selected === 'card'}
-    <CardSimulator {amount} {busy} onOutcome={onCard} />
+    <CardForm {amount} {busy} onSubmit={onCard} />
   {:else if selected === 'deuna'}
-    <div class="deuna">
-      <p class="small muted">
-        Se generará un enlace de prueba por {formatMoney(amount)} asociado a este pedido. Si cambias el carrito, el
-        enlace anterior se invalida y se genera otro por el nuevo total.
-      </p>
-      <button type="button" class="btn btn-primary" disabled={busy} onclick={onDeUna}>Pagar con DeUna →</button>
-    </div>
+    <DeUnaPanel
+      {amount}
+      {busy}
+      {device}
+      qr={deunaQr}
+      onOpenApp={onDeUna}
+      onGenerateQr={onDeUnaQr}
+      onQrOutcome={onDeUnaQrOutcome}
+      {onSwitchDevice}
+    />
   {:else}
     <p class="small muted">Selecciona un método para continuar.</p>
   {/if}
@@ -86,11 +96,5 @@
   .body {
     display: flex;
     flex-direction: column;
-  }
-  .deuna {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
   }
 </style>

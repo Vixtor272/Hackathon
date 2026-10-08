@@ -45,6 +45,33 @@ describe('PaymentFlow', () => {
     expect(confirmed.order.status).toBe('PAID');
   });
 
+  it('pays with the card form: test numbers decide the outcome, invalid data never reaches the gateway', async () => {
+    const { flow } = setup();
+    const card = { number: '4000 0000 0000 0002', holder: 'María Pérez', expiry: '12/30', cvv: '123' };
+    const now = new Date('2026-10-08T15:00:00Z');
+
+    await expect(flow.payWithCardDetails('ord_1', { ...card, cvv: '1' }, now)).rejects.toSatisfy(
+      (error: unknown) => isApiError(error) && error.code === 'VALIDATION',
+    );
+    const declined = await flow.payWithCardDetails('ord_1', card, now);
+    expect(declined.payment.status).toBe('REJECTED');
+    const approved = await flow.payWithCardDetails('ord_1', { ...card, number: '4242 4242 4242 4242' }, now);
+    expect(approved.order.status).toBe('PAID');
+  });
+
+  it('offers DeUna as a QR with a random reference and pays it without choosing a bank', async () => {
+    const orders = new InMemoryOrderGateway([sampleOrder()]);
+    const flow = new PaymentFlow(new InMemoryPaymentGateway(orders.store), () => 'DU-TESTREF1');
+    const qr = await flow.startDeUnaQr('ord_1');
+    expect(qr.reference).toBe('DU-TESTREF1');
+    expect(qr.qrPayload).toContain(`/deuna/${qr.payment.id}`);
+    expect(qr.qrPayload).toContain('ref=DU-TESTREF1');
+
+    const paid = await flow.confirmDeUnaQr(qr.payment.id, 'approved');
+    expect(paid.payment.status).toBe('APPROVED');
+    expect(paid.order.status).toBe('PAID');
+  });
+
   it('invalidates a pending payment when the cart changes', async () => {
     const { flow, checkout } = setup();
     const { payment } = await flow.startDeUna('ord_1');

@@ -12,9 +12,15 @@ export class Checkout {
     return this.orders.getOrder(orderId);
   }
 
+  /** Prescription items can grow back after a reduction, but never past the prescribed quantity. */
   increase(order: Order, item: OrderItem): Promise<Order> {
-    if (item.requiresPrescription) {
-      return Promise.reject(new ApiError('RX_INCREASE_NOT_ALLOWED', 'Los medicamentos bajo receta no se pueden aumentar desde esta página'));
+    if (item.requiresPrescription && item.quantity >= item.prescribedQuantity) {
+      return Promise.reject(
+        new ApiError(
+          'RX_INCREASE_NOT_ALLOWED',
+          `${item.medicine} es bajo receta: la cantidad máxima es la prescrita (${item.prescribedQuantity} ${item.unitLabel})`,
+        ),
+      );
     }
     if (!item.canIncrease) {
       return Promise.reject(new ApiError('INSUFFICIENT_STOCK', 'No hay stock adicional para este producto'));

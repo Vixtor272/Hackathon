@@ -22,8 +22,22 @@ type Services struct {
 	Clock         ports.Clock
 }
 
+// Surface is one half of the API. The customer experience and the company's
+// back office listen on different ports so neither can reach the other's
+// endpoints: a client's browser never sees the cashier board, and the
+// cashier app never talks to the WhatsApp channel.
+type Surface string
+
+const (
+	// SurfaceCustomer: WhatsApp channel, checkout cart, payments (card / DeUna).
+	SurfaceCustomer Surface = "customer"
+	// SurfaceCompany: cashier and courier board, notifications outbox, clients.
+	SurfaceCompany Surface = "company"
+)
+
 // Config tunes the HTTP layer.
 type Config struct {
+	Surface   Surface           // which half of the API this listener exposes
 	StaticDir string            // built Svelte app to serve at "/", empty = API only
 	Modules   map[string]string // reported by /health
 }
@@ -33,13 +47,32 @@ type handlers struct {
 	cfg Config
 }
 
-// NewRouter mounts the v1 contract.
+// NewRouter mounts the v1 contract of one surface.
 func NewRouter(s Services, cfg Config) http.Handler {
 	h := &handlers{s: s, cfg: cfg}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/v1/health", h.health)
+	switch cfg.Surface {
+	case SurfaceCustomer:
+		h.mountCustomer(mux)
+	case SurfaceCompany:
+		h.mountCompany(mux)
+	default:
+		panic("rest: unknown surface " + string(cfg.Surface))
+	}
 
+	mux.HandleFunc("/api/", h.apiNotFound)
+	if cfg.StaticDir != "" {
+		mux.Handle("/", spaHandler(cfg.StaticDir))
+	} else {
+		mux.HandleFunc("/", h.apiRoot)
+	}
+	return logging(cfg.Surface, cors(mux))
+}
+
+// mountCustomer: everything the client touches, from the chat to the payment.
+func (h *handlers) mountCustomer(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/whatsapp/webhook", h.webhook)
 	mux.HandleFunc("GET /api/v1/whatsapp/conversations/{phone}/messages", h.transcript)
 	mux.HandleFunc("DELETE /api/v1/whatsapp/conversations/{phone}", h.resetConversation)
@@ -63,6 +96,14 @@ func NewRouter(s Services, cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/v1/payments/banks", h.banks)
 	mux.HandleFunc("GET /api/v1/payments/{id}", h.getPayment)
 	mux.HandleFunc("POST /api/v1/payments/{id}/confirm", h.confirmPayment)
+}
+
+// mountCompany: the back office that prepares, dispatches and audits orders.
+func (h *handlers) mountCompany(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/v1/catalog/zones", h.zones)
+	mux.HandleFunc("GET /api/v1/catalog/pharmacies", h.pharmacies)
+
+	mux.HandleFunc("GET /api/v1/orders/{id}", h.getOrder)
 
 	mux.HandleFunc("GET /api/v1/fulfillment/orders", h.fulfillmentOrders)
 	mux.HandleFunc("POST /api/v1/fulfillment/orders/{id}/pharmacies/{pharmacyId}/status", h.pharmacyStatus)
@@ -70,14 +111,6 @@ func NewRouter(s Services, cfg Config) http.Handler {
 
 	mux.HandleFunc("GET /api/v1/notifications", h.notifications)
 	mux.HandleFunc("GET /api/v1/clients/{id}", h.getClient)
-
-	mux.HandleFunc("/api/", h.apiNotFound)
-	if cfg.StaticDir != "" {
-		mux.Handle("/", spaHandler(cfg.StaticDir))
-	} else {
-		mux.HandleFunc("/", h.apiRoot)
-	}
-	return logging(cors(mux))
 }
 
 func cors(next http.Handler) http.Handler {
@@ -103,11 +136,11 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
-func logging(next http.Handler) http.Handler {
+func logging(surface Surface, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
-		log.Printf("%s %s -> %d (%s)", r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
+		log.Printf("[%s] %s %s -> %d (%s)", surface, r.Method, r.URL.Path, rec.status, time.Since(start).Round(time.Millisecond))
 	})
 }

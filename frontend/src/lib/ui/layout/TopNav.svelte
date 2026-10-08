@@ -23,9 +23,8 @@
     {:else}
       <span class="disabled" title="Se habilita al iniciar un pago con DeUna">DeUna</span>
     {/if}
-    <a href={ROUTES.operations} class:active={$route.name === 'operations'}>Operaciones</a>
   </nav>
-  <span class="tag">MVP · datos simulados</span>
+  <span class="tag">Experiencia del cliente · datos simulados</span>
 </header>
 
 <style>

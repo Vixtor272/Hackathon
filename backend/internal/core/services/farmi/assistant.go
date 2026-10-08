@@ -330,6 +330,10 @@ func (a *Assistant) askMode(ctx context.Context, t *turn) error {
 			return nil
 		}
 		t.conv.Mode = domain.ModePickup
+		if len(av.Options) == 1 {
+			// Only one way to pick it up: no need to ask which.
+			return a.choosePickupOption(ctx, t, av.Options[0])
+		}
 		t.conv.State = domain.StateAskPickupOption
 		t.say(msgAskPickupOption(len(av.Options)))
 	case domain.IntentDelivery:
@@ -353,7 +357,10 @@ func (a *Assistant) askPickupOption(ctx context.Context, t *turn) error {
 		t.say(msgAskPickupOption(len(av.Options)))
 		return nil
 	}
-	opt := av.Options[n-1]
+	return a.choosePickupOption(ctx, t, av.Options[n-1])
+}
+
+func (a *Assistant) choosePickupOption(ctx context.Context, t *turn, opt domain.PharmacyOption) error {
 	t.conv.Coverage = opt.Coverage
 	t.say(msgOptionChosen(opt))
 	return a.startBrands(ctx, t)

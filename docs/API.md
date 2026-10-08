@@ -1,8 +1,16 @@
 # Farmi — REST contract (v1)
 
-Base URL: `http://localhost:8080` (Go backend). Every endpoint lives under `/api/v1`.
-The Svelte frontend runs on `http://localhost:5173` in dev (Vite proxies `/api` → `:8080`)
-and is served by the Go server from `/` in production (SPA fallback).
+The Go backend listens on **two ports**, one per side of the business. Every endpoint lives under `/api/v1`.
+
+| Surface | Base URL | Front end | Sections of this contract |
+|---|---|---|---|
+| Customer | `http://localhost:8080` (`PORT`) | client app — Vite `:5173` in dev | 1, 2, 3, 4, 5 |
+| Company | `http://localhost:8081` (`COMPANY_PORT`) | company portal — Vite `:5174` in dev | 6, 7, plus `GET /catalog/zones`, `GET /catalog/pharmacies`, `GET /orders/{id}` |
+
+Both share one core and one set of data (an order paid on `:8080` appears on the board of `:8081`), but each
+port mounts only its own routes: anything else answers `404 NOT_FOUND "Ruta no encontrada"`. `GET /health` exists
+on both and reports `surface`. Each built app is served by its port from `/` (SPA fallback); in dev each Vite
+server proxies `/api` to its port.
 
 Conventions
 - JSON everywhere. Timestamps are RFC 3339 strings. Money is a JSON number in USD with 2 decimals (`12.5`).
@@ -127,6 +135,9 @@ Farmi understands numbers for list choices plus: `sí/no`, `retiro/domicilio`, `
   "missing": [ { "medicine": "Amoxicilina 500 mg", "requested": 21, "available": 0 } ],
   "deliveryAvailable": true }
 ```
+Options rule: when at least one pharmacy of the zone covers the whole prescription, **only** those `single`
+options are returned. Otherwise the `split` options are returned (a main pharmacy plus the nearest one that has
+what it lacks). When there is exactly one option, Farmi suggests it and `retiro` selects it without asking.
 ### `POST /api/v1/catalog/brands`
 ```json
 { "pharmacyIds": ["med-norte"], "prescriptionId": "rx_1" }
@@ -174,7 +185,8 @@ When `sellByUnit` is false the quantity is in boxes (`unitsPerPack` units each).
 ```
 Cart rules (enforced server-side, mirrored in `canIncrease`/`canDecrease`):
 - Over-the-counter item: `+` and `−` allowed; `+` reserves extra stock or fails with `INSUFFICIENT_STOCK`.
-- Prescription item: `−` only; `+` fails with `RX_INCREASE_NOT_ALLOWED`.
+- Prescription item: `−` always; `+` only while `quantity < prescribedQuantity` (it can go down and back up to the
+  prescribed quantity, subject to stock). Above it fails with `RX_INCREASE_NOT_ALLOWED`.
 - Quantity `0` removes the item. Empty cart cannot be paid (`EMPTY_CART`).
 - Any change recalculates totals, adjusts the reservation and invalidates a pending payment.
 
@@ -226,9 +238,17 @@ same result and never deducts stock twice. `409 PAYMENT_INVALIDATED` if the cart
 On approval the order becomes `PAID`, stock is deducted once, reservations are consumed, pharmacies/courier are
 notified and the client receives the WhatsApp confirmation with the ETA.
 
+How the checkout page uses this (client side, no extra endpoints):
+- **Card**: a standard form (number with brand detection and Luhn check, cardholder, `MM/AA` expiry, CVV 3/4
+  digits) validated in the browser. Card data is never sent; the page creates a `card` payment and confirms it with
+  the outcome of the sandbox number (`4000 0000 0000 0002` → `rejected`, any other valid number → `approved`).
+- **DeUna on a computer** (detected from user agent + pointer type): the page creates a `deuna` payment and shows
+  its `link` as a QR with a random reference (`?ref=DU-XXXXXXXX`); "scanning" confirms it without `bankId`.
+  **On a phone** it opens the `link` (`/deuna/{id}`), where the client picks a bank.
+
 ---
 
-## 6. Fulfillment (cashier / courier board)
+## 6. Fulfillment (cashier / courier board) — company surface
 
 ### `GET /api/v1/fulfillment/orders?pharmacyId=med-norte` | `?role=courier` | (none = all)
 → `{ "orders": [ Order ] }` — orders from `PAID` onwards.
@@ -245,7 +265,7 @@ Both → `{ "order": Order }` and push the corresponding WhatsApp message with t
 
 ---
 
-## 7. Notifications outbox & misc
+## 7. Notifications outbox & misc — company surface
 
 ### `GET /api/v1/notifications?channel=whatsapp|pharmacy|courier&orderId=ord_1`
 ```json
@@ -255,7 +275,7 @@ Both → `{ "order": Order }` and push the corresponding WhatsApp message with t
 ### `GET /api/v1/clients/{id}` → `{ "client": { "id": "1712345678", "name": "María Pérez", "phone": "+593991111111" } }`
 ### `GET /api/v1/health`
 ```json
-{ "status": "ok", "modules": { "ocr": "mock", "catalogApi": "mock", "payments": "simulator",
+{ "status": "ok", "surface": "customer" | "company", "modules": { "ocr": "mock", "catalogApi": "mock", "payments": "simulator",
                                "whatsapp": "simulator", "storage": "memory" } }
 ```
 
@@ -282,7 +302,8 @@ Pharmacies: `med-norte` Medicity Demo Norte · `eco-norte` Económicas Demo Nort
 `eco-centro` Económicas Demo Centro · `med-centro` Medicity Demo Centro (uio-centro) · `med-sur` Medicity Demo Sur (uio-sur) ·
 `eco-gye` Económicas Demo Guayaquil (gye-norte).
 
-Stock is arranged so that, for `receta-001`: zona norte → one pharmacy covers everything (`med-norte`);
+Stock is arranged so that, for `receta-001`: zona norte → one pharmacy covers everything (`med-norte`, the only
+option offered);
 zona centro → split between `eco-centro` + `med-centro`; zona sur → missing items for pickup but delivery works
 (company stock = sum of all pharmacies). Delivery fee USD 2.50. Reservation TTL 10 min.
 ETAs: pickup ready ≈ 20 min · delivery arrival ≈ 45 min · after dispatch ≈ 15 min.

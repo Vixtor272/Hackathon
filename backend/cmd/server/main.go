@@ -36,27 +36,23 @@ import (
 )
 
 type config struct {
-	port           string
-	webBaseURL     string
-	staticDir      string
-	reservationTTL time.Duration
-	expiryTick     time.Duration
+	port             string // customer surface: WhatsApp channel, checkout, payments
+	companyPort      string // company surface: cashier / courier board, notifications
+	webBaseURL       string // base of the links Farmi sends to the client
+	staticDir        string // built customer app ("" = API only)
+	companyStaticDir string // built company app ("" = API only)
+	reservationTTL   time.Duration
+	expiryTick       time.Duration
 }
 
 func loadConfig() config {
 	c := config{
-		port:           env("PORT", "8080"),
-		staticDir:      env("STATIC_DIR", ""),
-		reservationTTL: envDuration("RESERVATION_TTL", 10*time.Minute),
-		expiryTick:     envDuration("EXPIRY_TICK", 5*time.Second),
-	}
-	switch c.staticDir {
-	case "none":
-		c.staticDir = ""
-	case "":
-		if _, err := os.Stat(filepath.Join("..", "frontend", "dist", "index.html")); err == nil {
-			c.staticDir = filepath.Join("..", "frontend", "dist")
-		}
+		port:             env("PORT", "8080"),
+		companyPort:      env("COMPANY_PORT", "8081"),
+		staticDir:        staticDir("STATIC_DIR", "cliente"),
+		companyStaticDir: staticDir("COMPANY_STATIC_DIR", "empresa"),
+		reservationTTL:   envDuration("RESERVATION_TTL", 10*time.Minute),
+		expiryTick:       envDuration("EXPIRY_TICK", 5*time.Second),
 	}
 	c.webBaseURL = env("WEB_BASE_URL", "")
 	if c.webBaseURL == "" {
@@ -67,6 +63,23 @@ func loadConfig() config {
 		}
 	}
 	return c
+}
+
+// staticDir resolves where a built Svelte app lives: the env var wins ("none"
+// disables it), otherwise ../frontend/dist/<app> when it was built.
+func staticDir(key, app string) string {
+	switch v := os.Getenv(key); v {
+	case "none":
+		return ""
+	case "":
+		dir := filepath.Join("..", "frontend", "dist", app)
+		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
+			return dir
+		}
+		return ""
+	default:
+		return v
+	}
 }
 
 func main() {
@@ -105,30 +118,44 @@ func main() {
 		Availability: availability, Orders: orderSvc, AI: ai, Clock: clk, IDs: ids, Courier: demo.Courier(),
 	})
 
-	router := rest.NewRouter(rest.Services{
+	services := rest.Services{
 		Assistant: assistant, OCR: ocrSvc, Validator: validator, Availability: availability, Orders: orderSvc,
 		Payments: paymentSvc, Fulfillment: fulfillmentSvc, Notifications: notifier, Clients: client.New(clients), Clock: clk,
-	}, rest.Config{StaticDir: cfg.staticDir, Modules: map[string]string{
+	}
+	modules := map[string]string{
 		"ocr": "mock", "catalogApi": "mock", "payments": "simulator", "whatsapp": "simulator", "storage": "memory", "ai": "rules",
-	}})
+	}
+	// One core, two doors: the customer experience and the company back office.
+	servers := []*http.Server{
+		newServer(cfg.port, rest.NewRouter(services, rest.Config{Surface: rest.SurfaceCustomer, StaticDir: cfg.staticDir, Modules: modules})),
+		newServer(cfg.companyPort, rest.NewRouter(services, rest.Config{Surface: rest.SurfaceCompany, StaticDir: cfg.companyStaticDir, Modules: modules})),
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go expiryWorker(ctx, orderSvc, cfg.expiryTick)
 
-	srv := &http.Server{Addr: ":" + cfg.port, Handler: router, ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		log.Printf("Farmi backend listening on http://localhost:%s (web: %s, static: %q, reservation TTL: %s)",
-			cfg.port, cfg.webBaseURL, cfg.staticDir, cfg.reservationTTL)
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server: %v", err)
-		}
-	}()
+	log.Printf("Farmi cliente  (WhatsApp, checkout, pagos)   http://localhost:%s  static: %q", cfg.port, cfg.staticDir)
+	log.Printf("Farmi empresa  (caja, reparto, notificaciones) http://localhost:%s  static: %q", cfg.companyPort, cfg.companyStaticDir)
+	log.Printf("links to the client point to %s · reservation TTL %s", cfg.webBaseURL, cfg.reservationTTL)
+	for _, srv := range servers {
+		go func(srv *http.Server) {
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("server %s: %v", srv.Addr, err)
+			}
+		}(srv)
+	}
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	for _, srv := range servers {
+		_ = srv.Shutdown(shutdownCtx)
+	}
 	log.Println("Farmi backend stopped")
+}
+
+func newServer(port string, h http.Handler) *http.Server {
+	return &http.Server{Addr: ":" + port, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 }
 
 // expiryWorker releases lapsed reservations (section 12 of the flow).

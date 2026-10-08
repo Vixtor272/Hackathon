@@ -4,7 +4,6 @@
   import NotFound from './lib/ui/NotFound.svelte';
   import CheckoutPage from './lib/ui/checkout/CheckoutPage.svelte';
   import DeUnaPage from './lib/ui/deuna/DeUnaPage.svelte';
-  import OperationsPage from './lib/ui/operations/OperationsPage.svelte';
   import WhatsAppPage from './lib/ui/whatsapp/WhatsAppPage.svelte';
 </script>
 
@@ -20,8 +19,6 @@
     {#key $route.paymentId}
       <DeUnaPage paymentId={$route.paymentId} />
     {/key}
-  {:else if $route.name === 'operations'}
-    <OperationsPage />
   {:else}
     <NotFound path={$route.path} />
   {/if}
