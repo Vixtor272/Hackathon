@@ -51,9 +51,13 @@ Response `200`:
 ```json
 { "id": "msg_1", "direction": "in" | "out", "type": "text" | "image" | "link",
   "text": "¡Hola! Soy Farmi…", "mediaId": "receta-001", "mediaUrl": "/recetas/receta-001.svg",
-  "link": "http://localhost:5173/checkout/ord_1", "at": "2026-10-08T15:04:05Z" }
+  "link": "http://localhost:5173/checkout/ord_1", "at": "2026-10-08T15:04:05Z",
+  "options": [ { "label": "🏪 Retiro", "value": "retiro" }, { "label": "🚚 Domicilio", "value": "domicilio" } ] }
 ```
 `mediaId`/`mediaUrl` only on `image`; `link` only on `link` (the text still contains the URL).
+`text` uses WhatsApp markup: the first line is the title and `*asterisks*` mark bold.
+`options` comes only on the last reply of a turn and lists the answers that step accepts (`value` is the text to
+send back); steps answered with free text or a photo have none.
 
 ### `DELETE /api/v1/whatsapp/conversations/{phone}` → `204`
 Resets the conversation (same as the user typing `reiniciar`).
@@ -187,7 +191,8 @@ Cart rules (enforced server-side, mirrored in `canIncrease`/`canDecrease`):
 - Over-the-counter item: `+` and `−` allowed; `+` reserves extra stock or fails with `INSUFFICIENT_STOCK`.
 - Prescription item: `−` always; `+` only while `quantity < prescribedQuantity` (it can go down and back up to the
   prescribed quantity, subject to stock). Above it fails with `RX_INCREASE_NOT_ALLOWED`.
-- Quantity `0` removes the item. Empty cart cannot be paid (`EMPTY_CART`).
+- Quantity `0` keeps the item in `items` with `quantity: 0` (the page greys it out) so it can be added back; it is
+  dropped when the order is paid. A cart with every item at `0` cannot be paid (`EMPTY_CART`).
 - Any change recalculates totals, adjusts the reservation and invalidates a pending payment.
 
 ### `PATCH /api/v1/orders/{id}/items/{itemId}`

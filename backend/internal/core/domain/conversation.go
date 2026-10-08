@@ -36,7 +36,16 @@ const (
 	MessageLink  MessageType = "link"
 )
 
-// Message is one bubble of the WhatsApp transcript.
+// MessageOption is a quick reply offered with a message: Label is what the
+// client sees and Value the text sent back when it is tapped (WhatsApp's
+// interactive reply buttons / list rows).
+type MessageOption struct {
+	Label string
+	Value string
+}
+
+// Message is one bubble of the WhatsApp transcript. Options are the answers
+// Farmi expects to that message, when they can be listed.
 type Message struct {
 	ID        string
 	Direction MessageDirection
@@ -45,6 +54,7 @@ type Message struct {
 	MediaID   string
 	MediaURL  string
 	Link      string
+	Options   []MessageOption
 	At        time.Time
 }
 

@@ -119,7 +119,7 @@ La página muestra el carrito ya elegido, los locales de retiro o la dirección 
 | Bajo receta | Deshabilitado | Habilitado | Reducir; no aumentar desde esta página |
 
 - Las cantidades se expresan en la unidad de venta de cada producto.
-- Al reducir a cero, el producto se retira del carrito.
+- Al reducir a cero, el producto queda en el carrito marcado en gris (no se cobra) y se puede volver a agregar.
 - Si quedan menos unidades que las prescritas, la confirmación muestra esa diferencia.
 - Cada cambio recalcula subtotales, total y reserva.
 - Al reducir, se liberan las unidades sobrantes.

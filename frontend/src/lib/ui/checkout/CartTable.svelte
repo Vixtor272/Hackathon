@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Order, OrderItem } from '../../domain';
+  import { isEmptyCart, isPaid, type Order, type OrderItem } from '../../domain';
   import { formatMoney } from '../../format';
   import StatusPill from '../shared/StatusPill.svelte';
 
@@ -14,6 +14,7 @@
   let { order, editable, busy, onIncrease, onDecrease }: Props = $props();
 
   const multiPharmacy = $derived(new Set(order.items.map((item) => item.pharmacyId)).size > 1);
+  const pending = $derived(!isPaid(order));
 
   function increaseHint(item: OrderItem): string {
     if (item.requiresPrescription && item.quantity >= item.prescribedQuantity) {
@@ -27,6 +28,9 @@
 {#if order.items.length === 0}
   <p class="empty">El carrito está vacío. Agrega productos desde el chat o cancela el pedido.</p>
 {:else}
+  {#if pending && isEmptyCart(order)}
+    <p class="empty">No hay productos por comprar. Usa + para volver a agregar alguno o cancela el pedido.</p>
+  {/if}
   <div class="scroll">
     <table class="table">
       <thead>
@@ -41,11 +45,16 @@
       </thead>
       <tbody>
         {#each order.items as item (item.id)}
-          <tr>
+          <tr class:removed={item.quantity === 0}>
             <td>
               <strong>{item.medicine}</strong>
               <div class="muted small">{item.brand} · {item.presentation}</div>
-              {#if item.quantity < item.prescribedQuantity}
+              {#if item.quantity === 0}
+                <div class="small">
+                  No incluido en el pedido{#if item.canIncrease} · usa + para volver a agregarlo{#if item.requiresPrescription}
+                      {' '}(hasta {item.prescribedQuantity} {item.unitLabel}){/if}{/if}
+                </div>
+              {:else if item.quantity < item.prescribedQuantity}
                 <div class="small diff">
                   Prescritas: {item.prescribedQuantity} {item.unitLabel} · faltan {item.prescribedQuantity - item.quantity}
                 </div>
@@ -115,6 +124,17 @@
   }
   .diff {
     color: var(--warning);
+  }
+  /* Set aside at zero: greyed out, but + still brings it back. */
+  .removed {
+    background: var(--surface-muted);
+    color: var(--muted);
+  }
+  .removed td > :global(*):not(.qty) {
+    opacity: 0.55;
+  }
+  .removed strong {
+    text-decoration: line-through;
   }
   /* Phones: each product becomes a card so the − / + buttons stay on screen. */
   @media (max-width: 720px) {

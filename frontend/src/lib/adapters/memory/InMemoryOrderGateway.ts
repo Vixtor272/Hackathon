@@ -33,14 +33,12 @@ export class InMemoryOrderGateway implements OrderGateway {
       if (Number.isFinite(extra)) this.extraStock.set(item.sku, extra - (quantity - item.quantity));
     }
 
-    if (quantity === 0) {
-      order.items = order.items.filter((candidate) => candidate.id !== itemId);
-    } else {
-      item.quantity = quantity;
-      item.subtotal = round2(quantity * item.unitPrice);
-      const hasStock = (this.extraStock.get(item.sku) ?? 1) > 0;
-      item.canIncrease = hasStock && (!item.requiresPrescription || quantity < item.prescribedQuantity);
-    }
+    // A line at zero stays in the cart so it can be added back.
+    item.quantity = quantity;
+    item.subtotal = round2(quantity * item.unitPrice);
+    const hasStock = (this.extraStock.get(item.sku) ?? 1) > 0;
+    item.canIncrease = hasStock && (!item.requiresPrescription || quantity < item.prescribedQuantity);
+    item.canDecrease = quantity > 0;
     this.recalculate(order);
     if (order.payment && order.payment.status === 'PENDING') order.payment = { ...order.payment, status: 'INVALIDATED' };
     return clone(order);

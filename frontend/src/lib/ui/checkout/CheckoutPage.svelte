@@ -5,6 +5,7 @@
   import {
     errorMessage,
     isApiError,
+    isEmptyCart,
     isPaid,
     maskedNumber,
     type CardForm,
@@ -42,7 +43,7 @@
   let deunaQr = $state<DeUnaQr | null>(null);
 
   const paid = $derived(order ? isPaid(order) : false);
-  const editable = $derived(order ? checkout.canPay(order) || (order.status === 'PENDING' && order.items.length === 0) : false);
+  const editable = $derived(order ? order.status === 'PENDING' && order.reservation.active : false);
 
   // A QR is only shown while its payment is the order's pending one: a cart
   // change, a rejection or an expiry voids it.
@@ -91,7 +92,6 @@
 
   function decrease(item: OrderItem): void {
     if (!order) return;
-    if (item.quantity === 1 && !window.confirm(`¿Quitar ${item.medicine} del carrito? No podrás volver a agregarlo desde esta página.`)) return;
     const current = order;
     void run(() => checkout.decrease(current, item));
   }
@@ -189,7 +189,7 @@
       {#if !paid && order.status !== 'CANCELLED'}
         <p class="small muted">
           Los productos de venta libre se pueden aumentar o reducir según stock. Los medicamentos bajo receta se pueden reducir y
-          volver a subir hasta la cantidad prescrita, nunca más. Al llegar a cero, el producto sale del carrito.
+          volver a subir hasta la cantidad prescrita, nunca más. Al llegar a cero, el producto queda en gris y no se cobra; con + se vuelve a agregar.
         </p>
       {/if}
       <CartTable {order} {editable} {busy} onIncrease={increase} onDecrease={decrease} />
@@ -214,7 +214,7 @@
           onSwitchDevice={(next) => (device = next)}
         />
       </section>
-    {:else if order.status === 'PENDING' && order.items.length === 0}
+    {:else if order.status === 'PENDING' && isEmptyCart(order)}
       <div class="banner banner-warning"><div>El carrito está vacío: no se puede pagar.</div></div>
     {/if}
 

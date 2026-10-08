@@ -1,24 +1,33 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { Message } from '../../domain';
+  import type { ConversationState, Message } from '../../domain';
   import ChatBubble from './ChatBubble.svelte';
   import QuickReplies from './QuickReplies.svelte';
 
   interface Props {
     phone: string;
     messages: Message[];
+    conversationState: ConversationState | null;
     connected: boolean;
     busy: boolean;
     onSendText: (text: string) => void;
     onAttach: () => void;
   }
 
-  let { phone, messages, connected, busy, onSendText, onAttach }: Props = $props();
+  let { phone, messages, conversationState, connected, busy, onSendText, onAttach }: Props = $props();
   let draft = $state('');
   let body = $state<HTMLDivElement | null>(null);
 
+  // Only the options of Farmi's latest message apply: once the client answers, they go away.
+  const options = $derived.by(() => {
+    const last = messages.at(-1);
+    return last?.direction === 'out' ? (last.options ?? []) : [];
+  });
+  const awaitingPhoto = $derived(conversationState === 'ASK_PRESCRIPTION' && messages.length > 0);
+
   $effect(() => {
     void messages.length;
+    void options.length;
     void tick().then(() => body?.scrollTo({ top: body.scrollHeight, behavior: 'smooth' }));
   });
 
@@ -56,7 +65,7 @@
     {/if}
   </div>
 
-  <QuickReplies disabled={busy || !connected} onSend={onSendText} />
+  <QuickReplies {options} {awaitingPhoto} disabled={busy || !connected} onSend={onSendText} {onAttach} />
 
   <form class="composer" onsubmit={submit}>
     <button type="button" class="btn attach" onclick={onAttach} disabled={busy || !connected} title="Adjuntar receta">📎 Adjuntar receta</button>

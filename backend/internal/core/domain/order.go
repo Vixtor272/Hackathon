@@ -83,7 +83,8 @@ func (i OrderItem) CanIncrease() bool {
 	return !i.RequiresPrescription || i.Quantity < i.PrescribedQuantity
 }
 
-// CanDecrease: any product can be reduced (to zero removes it).
+// CanDecrease: any product can be reduced; at zero the line stays in the
+// cart, set aside, so the client can add it back.
 func (i OrderItem) CanDecrease() bool { return i.Quantity > 0 }
 
 // Fulfillment tracks preparation in one pharmacy.
@@ -169,8 +170,16 @@ func (o Order) Clone() Order {
 	return c
 }
 
-// IsEmpty reports whether the cart has no items.
-func (o *Order) IsEmpty() bool { return len(o.Items) == 0 }
+// IsEmpty reports whether the cart has no units to buy (lines set aside at
+// zero do not count).
+func (o *Order) IsEmpty() bool {
+	for _, it := range o.Items {
+		if it.Quantity > 0 {
+			return false
+		}
+	}
+	return true
+}
 
 // Subtotal sums the items.
 func (o *Order) Subtotal() Money {
@@ -262,18 +271,14 @@ func (o *Order) QuantityChange(itemID string, qty int) (OrderItem, int, error) {
 	return item, delta, nil
 }
 
-// ApplyQuantity sets the new quantity; zero removes the line.
+// ApplyQuantity sets the new quantity. A line at zero stays in the cart so the
+// client can add it back; MarkPaid drops it.
 func (o *Order) ApplyQuantity(itemID string, qty int) {
 	for i := range o.Items {
-		if o.Items[i].ID != itemID {
-			continue
-		}
-		if qty == 0 {
-			o.Items = append(o.Items[:i], o.Items[i+1:]...)
+		if o.Items[i].ID == itemID {
+			o.Items[i].Quantity = qty
 			return
 		}
-		o.Items[i].Quantity = qty
-		return
 	}
 }
 
@@ -311,7 +316,7 @@ func (o *Order) FulfillmentFor(pharmacyID string) *Fulfillment {
 	return nil
 }
 
-// MarkPaid moves the order to PAID and opens the preparation records with the
+// MarkPaid moves the order to PAID, drops the lines left at zero and opens the preparation records with the
 // demo ETAs. Calling it on a paid order is a no-op (idempotent payments).
 func (o *Order) MarkPaid(now time.Time) {
 	if o.IsPaid() {
@@ -320,6 +325,13 @@ func (o *Order) MarkPaid(now time.Time) {
 	o.Status = OrderPaid
 	paid := now
 	o.PaidAt = &paid
+	bought := make([]OrderItem, 0, len(o.Items))
+	for _, it := range o.Items {
+		if it.Quantity > 0 {
+			bought = append(bought, it)
+		}
+	}
+	o.Items = bought
 	o.Fulfillments = nil
 	for _, id := range o.PharmacyIDs() {
 		items := o.ItemsFor(id)

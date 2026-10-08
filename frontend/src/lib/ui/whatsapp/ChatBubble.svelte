@@ -2,6 +2,7 @@
   import type { Message } from '../../domain';
   import { formatTime } from '../../format';
   import { openLink } from '../../router';
+  import { parseMarkup } from './markup';
 
   interface Props {
     message: Message;
@@ -11,6 +12,7 @@
 
   /** Backend "in" = sent by the client → right-hand green bubble, like WhatsApp. */
   const mine = $derived(message.direction === 'in');
+  const lines = $derived(parseMarkup(message.text));
 </script>
 
 <div class="line" class:mine>
@@ -19,32 +21,38 @@
       <img class="media" src={message.mediaUrl} alt="Receta enviada" loading="lazy" />
     {/if}
     {#if message.text}
-      <p class="text">{message.text}</p>
+      <div class="text">
+        {#each lines as line, index (index)}
+          <div class="row" class:title={line.title}>
+            {#each line.spans as span, at (at)}{#if span.bold}<strong>{span.text}</strong>{:else}{span.text}{/if}{/each}
+          </div>
+        {/each}
+      </div>
     {/if}
     {#if message.type === 'link' && message.link}
       <button type="button" class="btn btn-primary btn-sm link" onclick={() => openLink(message.link ?? '')}>
         Abrir página de pago →
       </button>
     {/if}
-    <span class="time">{formatTime(message.at)}{#if mine} ✓✓{/if}</span>
   </div>
+  <span class="time">{formatTime(message.at)}{#if mine} ✓✓{/if}</span>
 </div>
 
 <style>
   .line {
     display: flex;
-    justify-content: flex-start;
-    padding: 2px 10px;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 3px 10px;
   }
   .line.mine {
-    justify-content: flex-end;
+    align-items: flex-end;
   }
   .bubble {
     max-width: min(78%, 480px);
     background: #fff;
     border-radius: 10px;
-    padding: 7px 10px 18px;
-    position: relative;
+    padding: 7px 10px;
     box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
     font-size: 0.95rem;
   }
@@ -52,9 +60,15 @@
     background: var(--wa-bubble-out);
   }
   .text {
-    margin: 0;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+  .row {
+    min-height: 1.35em;
+  }
+  .row.title {
+    font-size: 1.02rem;
+    margin-bottom: 3px;
   }
   .media {
     display: block;
@@ -69,10 +83,8 @@
     margin-top: 8px;
   }
   .time {
-    position: absolute;
-    right: 8px;
-    bottom: 3px;
+    margin: 2px 4px 0;
     font-size: 0.68rem;
-    color: rgba(0, 0, 0, 0.45);
+    color: rgba(0, 0, 0, 0.5);
   }
 </style>

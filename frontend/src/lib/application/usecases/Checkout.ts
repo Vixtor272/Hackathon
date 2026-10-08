@@ -1,4 +1,4 @@
-import { ApiError, isPaid, type Order, type OrderItem, type PaymentOptions } from '../../domain';
+import { ApiError, isEmptyCart, isPaid, type Order, type OrderItem, type PaymentOptions } from '../../domain';
 import type { OrderGateway } from '../ports';
 
 /**
@@ -12,7 +12,7 @@ export class Checkout {
     return this.orders.getOrder(orderId);
   }
 
-  /** Prescription items can grow back after a reduction, but never past the prescribed quantity. */
+  /** Prescription items can grow back after a reduction (even from zero), but never past the prescribed quantity. */
   increase(order: Order, item: OrderItem): Promise<Order> {
     if (item.requiresPrescription && item.quantity >= item.prescribedQuantity) {
       return Promise.reject(
@@ -62,6 +62,6 @@ export class Checkout {
 
   /** True when the backend would accept a payment for this cart. */
   canPay(order: Order): boolean {
-    return order.status === 'PENDING' && order.items.length > 0 && order.reservation.active;
+    return order.status === 'PENDING' && !isEmptyCart(order) && order.reservation.active;
   }
 }

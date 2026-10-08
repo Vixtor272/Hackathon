@@ -77,6 +77,65 @@ func TestPickupHappyPath(t *testing.T) {
 	expect(t, app.Say(t, maria, "hola"), domain.StateAskID, "cédula")
 }
 
+// optionValues are the quick replies offered with the last reply of a turn.
+func optionValues(r ports.ConversationReply) string {
+	var values []string
+	for _, o := range r.Replies[len(r.Replies)-1].Options {
+		values = append(values, o.Value)
+	}
+	return strings.Join(values, ",")
+}
+
+func TestEachStepOffersOnlyItsOwnOptions(t *testing.T) {
+	app := testkit.New(10 * time.Minute)
+	steps := []struct {
+		send func() ports.ConversationReply
+		want string
+	}{
+		{func() ports.ConversationReply { return app.Say(t, maria, "hola") }, ""},
+		{func() ports.ConversationReply { return app.Say(t, maria, "1712345678") }, ""},
+		{func() ports.ConversationReply { return app.SendImage(t, maria, "receta-001") }, "1,2,3,4"},
+		// Zone 3 has no pharmacy for the prescription: other zones, or delivery.
+		{func() ports.ConversationReply { return app.Say(t, maria, "3") }, "1,2,3,4,domicilio"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "2") }, "retiro,domicilio"},
+		// One brand in stock per medicine at these two stores.
+		{func() ports.ConversationReply { return app.Say(t, maria, "retiro") }, "1"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "1") }, "1"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "1") }, "1"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "1") }, "sí,no"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "sí") }, "estado,cancelar"},
+		{func() ports.ConversationReply { return app.Say(t, maria, "cancelar") }, "nueva compra"},
+	}
+	for i, step := range steps {
+		if got := optionValues(step.send()); got != step.want {
+			t.Fatalf("step %d: want options %q, got %q", i+1, step.want, got)
+		}
+	}
+}
+
+func TestZoneWithoutPharmaciesAsksForAnotherZone(t *testing.T) {
+	app := testkit.New(10 * time.Minute)
+	app.Say(t, maria, "1712345678")
+	app.SendImage(t, maria, "receta-001")
+	// Nothing to ask about pickup or delivery yet: the zone question repeats.
+	expect(t, app.Say(t, maria, "3"), domain.StateAskZone, "Elige otra zona")
+	expect(t, app.Say(t, maria, "retiro"), domain.StateAskZone, "No identifiqué la zona")
+	expect(t, app.Say(t, maria, "3"), domain.StateAskZone, "no hay farmacias")
+	// Another zone runs the search again and the flow continues as usual.
+	expect(t, app.Say(t, maria, "2"), domain.StateAskMode, "Económicas Demo Centro + Medicity Demo Centro")
+	expect(t, app.Say(t, maria, "retiro"), domain.StateAskBrand, "Paracetamol")
+}
+
+func TestZoneWithoutPharmaciesStillOffersDelivery(t *testing.T) {
+	app := testkit.New(10 * time.Minute)
+	app.Say(t, maria, "1712345678")
+	app.SendImage(t, maria, "receta-001")
+	// Delivery is not an answer to the zone question until a zone came back empty.
+	expect(t, app.Say(t, maria, "domicilio"), domain.StateAskZone, "No identifiqué la zona")
+	expect(t, app.Say(t, maria, "3"), domain.StateAskZone, "escribe *domicilio*")
+	expect(t, app.Say(t, maria, "domicilio"), domain.StateAskAddress, "dirección")
+}
+
 func TestDeliveryHappyPathWithNewClient(t *testing.T) {
 	app := testkit.New(10 * time.Minute)
 	ctx := context.Background()
@@ -85,8 +144,7 @@ func TestDeliveryHappyPathWithNewClient(t *testing.T) {
 	expect(t, app.Say(t, phone, "1101234567"), domain.StateAskName, "llamas")
 	expect(t, app.Say(t, phone, "Carla Demo"), domain.StateAskPrescription, "Carla")
 	app.SendImage(t, phone, "receta-002")
-	expect(t, app.Say(t, phone, "guayaquil"), domain.StateAskMode, "A domicilio sí podemos")
-	expect(t, app.Say(t, phone, "retiro"), domain.StateAskMode, "No hay opciones de retiro")
+	expect(t, app.Say(t, phone, "guayaquil"), domain.StateAskZone, "A domicilio sí podemos")
 	expect(t, app.Say(t, phone, "domicilio"), domain.StateAskAddress, "dirección")
 	expect(t, app.Say(t, phone, "Av. Demo 123 y Calle 4"), domain.StateAskBrand, "Repartidor")
 	app.Say(t, phone, "1")
@@ -123,7 +181,7 @@ func TestExpiredReservationCanBeRenewedFromChat(t *testing.T) {
 	app.Say(t, maria, "1712345678")
 	app.SendImage(t, maria, "receta-001")
 	expect(t, app.Say(t, maria, "1"), domain.StateAskMode, "te sugiero esta farmacia")
-	expect(t, app.Say(t, maria, "retiro"), domain.StateAskBrand, "Retiro en: Medicity Demo Norte")
+	expect(t, app.Say(t, maria, "retiro"), domain.StateAskBrand, "Retiro en farmacia")
 	app.Say(t, maria, "1")
 	app.Say(t, maria, "1")
 	expect(t, app.Say(t, maria, "1"), domain.StateConfirmCart, "Total a pagar")

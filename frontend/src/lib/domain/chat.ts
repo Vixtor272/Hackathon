@@ -1,6 +1,12 @@
 export type MessageDirection = 'in' | 'out';
 export type MessageType = 'text' | 'image' | 'link';
 
+/** A quick reply offered with a message: `value` is the text sent when it is tapped. */
+export interface MessageOption {
+  label: string;
+  value: string;
+}
+
 export interface Message {
   id: string;
   direction: MessageDirection;
@@ -9,6 +15,8 @@ export interface Message {
   mediaId?: string;
   mediaUrl?: string;
   link?: string;
+  /** Answers Farmi expects to this message; only on the last reply of a turn. */
+  options?: MessageOption[];
   at: string;
 }
 

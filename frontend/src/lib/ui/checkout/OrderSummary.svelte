@@ -13,7 +13,7 @@
   const pharmacies = $derived(
     order.fulfillments.length > 0
       ? order.fulfillments
-      : [...new Map(order.items.map((item) => [item.pharmacyId, { pharmacyId: item.pharmacyId, pharmacyName: item.pharmacyName, address: '' }])).values()],
+      : [...new Map(order.items.filter((item) => item.quantity > 0).map((item) => [item.pharmacyId, { pharmacyId: item.pharmacyId, pharmacyName: item.pharmacyName, address: '' }])).values()],
   );
 </script>
 

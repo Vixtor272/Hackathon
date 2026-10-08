@@ -152,7 +152,7 @@ flowchart LR
 ```
 
 **Prescription quantities.** A prescription item prescribed at 21 can go down to any amount and back up to 21,
-never above (`RX_INCREASE_NOT_ALLOWED`). Zero removes the line, and the page asks before removing the last unit.
+never above (`RX_INCREASE_NOT_ALLOWED`). At zero the line stays in the cart, greyed out, and `+` brings it back; lines at zero are dropped on payment.
 Over-the-counter items can grow as far as stock allows.
 
 **DeUna by device**

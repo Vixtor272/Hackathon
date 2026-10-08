@@ -105,6 +105,7 @@
     <ChatPanel
       {phone}
       messages={conversation?.messages ?? []}
+      conversationState={conversation?.state ?? null}
       {connected}
       {busy}
       onSendText={sendText}

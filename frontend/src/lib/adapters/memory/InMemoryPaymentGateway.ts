@@ -1,4 +1,4 @@
-import { ApiError, type Bank, type Order, type Payment, type PaymentConfirmation, type PaymentMethod, type PaymentOutcome, type PaymentWithOrder } from '../../domain';
+import { ApiError, isEmptyCart, type Bank, type Order, type Payment, type PaymentConfirmation, type PaymentMethod, type PaymentOutcome, type PaymentWithOrder } from '../../domain';
 import type { PaymentGateway } from '../../application/ports';
 import { clone } from './fixtures';
 
@@ -19,7 +19,7 @@ export class InMemoryPaymentGateway implements PaymentGateway {
   async createPayment(orderId: string, method: PaymentMethod): Promise<Payment> {
     const order = this.order(orderId);
     if (order.status !== 'PENDING') throw new ApiError('INVALID_STATE', 'El pedido no está pendiente de pago', 409);
-    if (order.items.length === 0) throw new ApiError('EMPTY_CART', 'El carrito está vacío', 409);
+    if (isEmptyCart(order)) throw new ApiError('EMPTY_CART', 'El carrito está vacío', 409);
     if (!order.reservation.active) throw new ApiError('RESERVATION_EXPIRED', 'La reserva venció', 409);
 
     for (const previous of this.payments.values()) {
@@ -63,6 +63,7 @@ export class InMemoryPaymentGateway implements PaymentGateway {
       payment.confirmedAt = new Date(0).toISOString();
       if (outcome === 'approved') {
         order.status = 'PAID';
+        order.items = order.items.filter((item) => item.quantity > 0);
         order.paidAt = payment.confirmedAt;
         order.reservation = { ...order.reservation, active: false, secondsLeft: 0 };
         this.stockDeductions.set(order.id, (this.stockDeductions.get(order.id) ?? 0) + 1);

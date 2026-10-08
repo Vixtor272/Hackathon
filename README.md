@@ -88,8 +88,8 @@ simulator. Company portal (`:5174` in dev, `:8081` built): cashier / courier boa
 2. **OCR + validation.** Attach `receta-004` (no signature/stamp) → rejected with the reasons.
    Attach `receta-003` (inactive doctor) → rejected. Attach `receta-001` → validated, medicines listed.
 3. **Availability.** Zone `2` (Quito — zona centro) → the only option is the split
-   "Económicas Demo Centro + Medicity Demo Centro" (zone `1` suggests only Medicity Demo Norte, zone `3` has
-   nothing for pickup but delivery works). `retiro` → `1`.
+   "Económicas Demo Centro + Medicity Demo Centro" (zone `1` suggests only Medicity Demo Norte; zone `3` has
+   no pharmacy for the prescription, so Farmi asks for another zone and offers `domicilio`). `retiro` → `1`.
 4. **Brands and cart.** Pick a brand per medicine (`1`, `1`, `1`), confirm with `sí` → order
    `DEMO-001`, 10-minute reservation, checkout link.
 5. **Checkout.** Open the link: `+`/`−` per item (lower Amoxicilina, then `+` brings it back up to the

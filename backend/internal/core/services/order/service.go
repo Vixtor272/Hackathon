@@ -94,7 +94,7 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Order, error) {
 
 // ChangeQuantity applies the web page rules: OTC may grow if stock allows,
 // prescription items may shrink and grow back up to the prescribed quantity
-// (stock allowing), zero removes, totals and reservation
+// (stock allowing), zero keeps the line set aside, totals and reservation
 // are recalculated and any pending payment is voided.
 func (s *Service) ChangeQuantity(ctx context.Context, orderID, itemID string, qty int) (domain.Order, error) {
 	s.mu.Lock()

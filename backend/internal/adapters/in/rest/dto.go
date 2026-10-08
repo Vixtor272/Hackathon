@@ -26,19 +26,29 @@ func strPtr(s string) *string {
 // --- WhatsApp ---------------------------------------------------------------
 
 type messageDTO struct {
-	ID        string `json:"id"`
-	Direction string `json:"direction"`
-	Type      string `json:"type"`
-	Text      string `json:"text"`
-	MediaID   string `json:"mediaId,omitempty"`
-	MediaURL  string `json:"mediaUrl,omitempty"`
-	Link      string `json:"link,omitempty"`
-	At        string `json:"at"`
+	ID        string             `json:"id"`
+	Direction string             `json:"direction"`
+	Type      string             `json:"type"`
+	Text      string             `json:"text"`
+	MediaID   string             `json:"mediaId,omitempty"`
+	MediaURL  string             `json:"mediaUrl,omitempty"`
+	Link      string             `json:"link,omitempty"`
+	Options   []messageOptionDTO `json:"options,omitempty"`
+	At        string             `json:"at"`
+}
+
+type messageOptionDTO struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 func toMessageDTO(m domain.Message) messageDTO {
-	return messageDTO{ID: m.ID, Direction: string(m.Direction), Type: string(m.Type), Text: m.Text,
+	d := messageDTO{ID: m.ID, Direction: string(m.Direction), Type: string(m.Type), Text: m.Text,
 		MediaID: m.MediaID, MediaURL: m.MediaURL, Link: m.Link, At: ts(m.At)}
+	for _, o := range m.Options {
+		d.Options = append(d.Options, messageOptionDTO(o))
+	}
+	return d
 }
 
 func toMessageDTOs(ms []domain.Message) []messageDTO {

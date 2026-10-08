@@ -57,14 +57,44 @@ describe('Checkout quantity rules', () => {
     expect(updated.total).toBeCloseTo(updated.items.reduce((sum, i) => sum + i.subtotal, 0), 2);
   });
 
-  it('removes an item when its quantity reaches zero', async () => {
+  it('keeps a prescription item at zero and lets it grow back up to the prescribed quantity', async () => {
+    const { checkout } = setup();
+    let order = await checkout.load('ord_1');
+    const rx = order.items.find((item) => item.requiresPrescription);
+    if (!rx) throw new Error('fixture needs a prescription item');
+
+    order = await checkout.changeQuantity(order, rx.id, 0);
+    let line = order.items.find((item) => item.id === rx.id)!;
+    expect(line).toMatchObject({ quantity: 0, subtotal: 0, canIncrease: true, canDecrease: false });
+
+    for (let i = 0; i < rx.prescribedQuantity; i++) {
+      order = await checkout.increase(order, order.items.find((item) => item.id === rx.id)!);
+    }
+    line = order.items.find((item) => item.id === rx.id)!;
+    expect(line.quantity).toBe(rx.prescribedQuantity);
+    expect(line.canIncrease).toBe(false);
+    await expect(checkout.increase(order, line)).rejects.toSatisfy(
+      (error: unknown) => isApiError(error) && error.code === 'RX_INCREASE_NOT_ALLOWED',
+    );
+  });
+
+  it('cannot pay a cart with every item at zero', async () => {
+    const { checkout } = setup();
+    let order = await checkout.load('ord_1');
+    for (const item of order.items) order = await checkout.changeQuantity(order, item.id, 0);
+    expect(order.items.length).toBeGreaterThan(0);
+    expect(order.total).toBe(0);
+    expect(checkout.canPay(order)).toBe(false);
+  });
+
+  it('sets an item aside when its quantity reaches zero', async () => {
     const { checkout } = setup();
     let order = await checkout.load('ord_1');
     const otc = order.items.find((item) => !item.requiresPrescription);
     if (!otc) throw new Error('fixture needs an over-the-counter item');
 
     order = await checkout.changeQuantity(order, otc.id, 0);
-    expect(order.items.some((item) => item.id === otc.id)).toBe(false);
+    expect(order.items.find((item) => item.id === otc.id)?.quantity).toBe(0);
     expect(order.subtotal).toBeCloseTo(11.55, 2);
   });
 

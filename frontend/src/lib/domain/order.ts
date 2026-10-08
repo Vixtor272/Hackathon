@@ -96,6 +96,11 @@ export function isPaid(order: Pick<Order, 'status'>): boolean {
   return PAID_STATUSES.has(order.status);
 }
 
+/** True when there is nothing to buy: lines set aside at zero do not count. */
+export function isEmptyCart(order: Pick<Order, 'items'>): boolean {
+  return order.items.every((item) => item.quantity === 0);
+}
+
 export function isClosed(order: Pick<Order, 'status'>): boolean {
   return order.status === 'CANCELLED' || order.status === 'EXPIRED';
 }

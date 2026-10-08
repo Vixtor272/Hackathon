@@ -62,11 +62,33 @@ func TestRxCanGoBackUpToThePrescribedQuantity(t *testing.T) {
 	}
 }
 
-func TestApplyQuantityZeroRemovesLine(t *testing.T) {
+func TestApplyQuantityZeroKeepsLineUntilPaid(t *testing.T) {
 	o := sampleOrder()
-	o.ApplyQuantity("itm_1", 0)
-	if len(o.Items) != 1 || o.Items[0].ID != "itm_2" {
-		t.Fatalf("want only itm_2 left, got %+v", o.Items)
+	o.ApplyQuantity("itm_2", 0)
+	rx, err := o.Item("itm_2")
+	if err != nil || rx.Quantity != 0 || len(o.Items) != 2 {
+		t.Fatalf("want itm_2 kept at zero, got %+v err=%v", o.Items, err)
+	}
+	if rx.CanDecrease() || !rx.CanIncrease() {
+		t.Fatal("a line at zero can only increase")
+	}
+	if _, delta, err := o.QuantityChange("itm_2", 21); err != nil || delta != 21 {
+		t.Fatalf("Rx back from zero to the prescribed quantity: delta=%d err=%v", delta, err)
+	}
+	_, _, err = o.QuantityChange("itm_2", 22)
+	wantCode(t, err, domain.CodeRxIncreaseNotAllowed)
+	if o.IsEmpty() {
+		t.Fatal("cart with itm_1 left is not empty")
+	}
+	o.MarkPaid(time.Now())
+	if len(o.Items) != 1 || o.Items[0].ID != "itm_1" {
+		t.Fatalf("paying must drop the lines at zero, got %+v", o.Items)
+	}
+	empty := sampleOrder()
+	empty.ApplyQuantity("itm_1", 0)
+	empty.ApplyQuantity("itm_2", 0)
+	if !empty.IsEmpty() {
+		t.Fatal("cart with every line at zero is empty")
 	}
 }
 

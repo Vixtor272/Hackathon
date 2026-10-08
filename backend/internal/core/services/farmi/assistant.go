@@ -104,6 +104,9 @@ func (a *Assistant) HandleInbound(ctx context.Context, in ports.InboundMessage) 
 	if handleErr != nil {
 		t.say(msgInternalError)
 	}
+	if n := len(t.out); n > 0 {
+		t.out[n-1].Options = a.quickReplies(ctx, &conv)
+	}
 	conv.UpdatedAt = now
 	if err := a.d.Conversations.Save(ctx, conv); err != nil {
 		return ports.ConversationReply{}, err
@@ -285,15 +288,24 @@ func (a *Assistant) promptZone(ctx context.Context, t *turn) error {
 		return err
 	}
 	t.conv.State = domain.StateAskZone
+	t.conv.Availability = nil
 	t.say(msgAskZone(zones))
 	return nil
 }
 
-// askZone: consult the company's API for options in the chosen zone.
+// askZone: consult the company's API for options in the chosen zone. A zone
+// with no pharmacy for the prescription keeps the client here to pick another
+// one (or to switch to delivery when the company can complete it).
 func (a *Assistant) askZone(ctx context.Context, t *turn) error {
 	zones, err := a.d.Availability.Zones(ctx)
 	if err != nil {
 		return err
+	}
+	if prev := t.conv.Availability; prev != nil && prev.DeliveryAvailable && !t.isImage() && t.intent.Intent == domain.IntentDelivery {
+		t.conv.Mode = domain.ModeDelivery
+		t.conv.State = domain.StateAskAddress
+		t.say(msgAskAddress)
+		return nil
 	}
 	zone, ok := a.d.AI.MatchZone(ctx, t.in.Text, zones)
 	if t.isImage() || !ok {
@@ -310,9 +322,9 @@ func (a *Assistant) askZone(ctx context.Context, t *turn) error {
 	}
 	t.conv.Zone = zone
 	t.conv.Availability = &av
-	if len(av.Options) == 0 && !av.DeliveryAvailable {
-		t.say(msgNoAvailability(zone, av.Missing))
-		t.say(msgAskZone(zones))
+	if len(av.Options) == 0 {
+		t.say(msgNoPharmacies(zone, av.Missing))
+		t.say(msgAskOtherZone(zones, av.DeliveryAvailable))
 		return nil
 	}
 	t.say(msgOptions(av))
