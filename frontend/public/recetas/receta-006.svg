@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800" role="img" aria-label="receta-006.svg">
+  <defs>
+    <filter id="blur"><feGaussianBlur stdDeviation="2.6"/><feColorMatrix type="saturate" values="0.2"/></filter>
+    <pattern id="lines" width="600" height="54" patternUnits="userSpaceOnUse"><line x1="70" y1="40" x2="530" y2="40" stroke="#d9e2ec" stroke-width="1"/></pattern>
+  </defs>
+  <style>
+    .paper { fill: #fffdf7; stroke: #cfd8e3; }
+    .title { font: 700 24px 'Helvetica Neue', Arial, sans-serif; fill: #0f3d2e; letter-spacing: 1px; }
+    .brand { font: 600 13px 'Helvetica Neue', Arial, sans-serif; fill: #1c7c54; letter-spacing: 2px; }
+    .label { font: 600 12px 'Helvetica Neue', Arial, sans-serif; fill: #5b6b7b; letter-spacing: 1px; }
+    .value { font: 400 17px 'Helvetica Neue', Arial, sans-serif; fill: #1f2933; }
+    .med { font: 600 18px 'Helvetica Neue', Arial, sans-serif; fill: #1f2933; }
+    .small { font: 400 13px 'Helvetica Neue', Arial, sans-serif; fill: #52606d; }
+    .missing { fill: #c0392b; font-style: italic; }
+    .sig { fill: none; stroke: #1b3a6b; stroke-width: 2.2; stroke-linecap: round; }
+    .stamp { fill: none; stroke: #1c7c54; stroke-width: 3; opacity: .75; }
+    .stampText { font: 700 12px 'Helvetica Neue', Arial, sans-serif; fill: #1c7c54; opacity: .85; }
+    .stampSmall { font: 500 10px 'Helvetica Neue', Arial, sans-serif; fill: #1c7c54; opacity: .85; }
+    .note { font: 400 12px 'Helvetica Neue', Arial, sans-serif; fill: #9aa5b1; }
+  </style>
+  <rect x="20" y="20" width="560" height="760" rx="14" class="paper"/>
+  <g>
+    <text x="70" y="70" class="brand">CENTRO MÉDICO DEMO · FARMAENLACE</text>
+    <text x="70" y="104" class="title">RECETA MÉDICA — DEMO</text>
+    <line x1="70" y1="124" x2="530" y2="124" stroke="#1c7c54" stroke-width="2"/>
+
+    <text x="70" y="166" class="label">PACIENTE</text>
+    <text x="70" y="190" class="value">María Pérez</text>
+    <text x="340" y="166" class="label">CÉDULA</text>
+    <text x="340" y="190" class="value">1712345678</text>
+
+    <text x="70" y="236" class="label">FECHA DE EMISIÓN</text>
+    <text x="70" y="260" class="value">07 / 10 / 2026</text>
+
+    <text x="70" y="306" class="label">MÉDICO</text>
+    <text x="70" y="330" class="value">Dr. Xavier Desconocido</text>
+    <text x="340" y="306" class="label">REGISTRO</text>
+    <text x="340" y="330" class="value">MSP-99999</text>
+
+    <line x1="70" y1="360" x2="530" y2="360" stroke="#d9e2ec"/>
+    <text x="70" y="394" class="label">PRESCRIPCIÓN</text>
+    
+    <text x="70" y="430" class="med">1. Paracetamol 500 mg</text>
+    <text x="70" y="452" class="small">Tabletas · 1 cada 8 horas · 20 tabletas</text>
+    
+    <g transform="rotate(-12 150 690)">
+      <ellipse cx="150" cy="690" rx="88" ry="38" class="stamp"/>
+      <text x="150" y="684" text-anchor="middle" class="stampText">DR. XAVIER DESCONOCIDO</text>
+      <text x="150" y="702" text-anchor="middle" class="stampSmall">MSP-99999 · MSP ECUADOR</text>
+    </g>
+    
+    <path d="M330 690 c20 -30 40 -30 55 -5 c10 18 25 10 40 -12 c15 -20 30 -8 45 8 c12 14 30 8 45 -14" class="sig"/>
+    <text x="330" y="722" class="small">Firma del médico</text>
+    <text x="70" y="760" class="note">Documento ficticio. El registro MSP-99999 no existe en la base demo de médicos.</text>
+  </g>
+</svg>

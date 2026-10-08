@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Go
+backend/bin/
+backend/tmp/
+*.test
+*.out
+
+# Node / Svelte
+frontend/node_modules/
+frontend/dist/
+frontend/.svelte-kit/
+frontend/*.local
+npm-debug.log*
+
+# Editors
+.vscode/
+.idea/
